@@ -11,6 +11,8 @@ name: Release
 #     otherwise the GITHUB_TOKEN cannot create the release and this job fails at the last step.
 #   * Pushing only dist/ changes does NOT release: the version in komari-theme.json has to change,
 #     so run tools/bump.py first.
+#   * To rebuild the asset for a version that already has a release, dispatch this workflow with
+#     force=true (Actions -> Release -> Run workflow).
 on:
   push:
     branches: [main]
