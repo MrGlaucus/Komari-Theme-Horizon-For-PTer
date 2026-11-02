@@ -4,7 +4,9 @@ name: Release
 # (bump with tools/bump.py, add a CHANGELOG section, push). Pushing a v* tag yourself also works.
 #
 # Fork notes:
-#   * Actions must be enabled once in Settings -> Actions (forks start disabled).
+#   * Actions must be enabled once in Settings -> Actions (forks start disabled). If a push to main
+#     produces no run at all, open the Actions tab once and confirm "I understand my workflows";
+#     until that is done GitHub silently skips push events in a fork.
 #   * Settings -> Actions -> General -> Workflow permissions must be "Read and write",
 #     otherwise the GITHUB_TOKEN cannot create the release and this job fails at the last step.
 #   * Pushing only dist/ changes does NOT release: the version in komari-theme.json has to change,
