@@ -1,5 +1,5 @@
 /*!
- * Horizon — theme settings page (/?view=theme-manage), admin only.
+ * Komari-Theme-Horizon-For-PTer — theme settings page (/?view=theme-manage), admin only.
  * Layout and option set follow Komari-Theme-LuminaPlus' 主题管理 page; values are saved with
  * POST /api/admin/theme/settings?theme=<short> and read back from /api/public → theme_settings.
  * Every visible string goes through Z(chinese, english); the language follows the header switch.
@@ -7,13 +7,19 @@
 (function () {
   'use strict';
 
-  window.KHorizonManage = function (page, KC) {
+  window.KHorizonForPTerManage = function (page, KC) {
     var S = KC.S, esc = KC.esc, icon = KC.icon;
-    var theme = (S.settings && S.settings.theme) || 'horizon';
+    var theme = (S.settings && S.settings.theme) || 'horizon-for-pter';
     var saved = KC.normalizeSettings(S.raw);
     var D = clone(saved);
     var ui = { msg: '', err: '', saving: false, nodeQuery: '', nodesOpen: false, importText: '', trafficQuery: '', cal: {} };
     var GiB = 1024 * 1024 * 1024;
+    // overview panel keys → [zh, en]; order and visibility live in overviewOrder / overviewHidden
+    var PANEL_LABELS = {
+      status: ['集群状态', 'Cluster status'], cpu: ['计算负载', 'Compute load'], memory: ['内存', 'Memory'],
+      disk: ['硬盘', 'Storage'], throughput: ['实时速率', 'Throughput'], traffic: ['周期流量', 'Cycle traffic'],
+      asset: ['剩余价值', 'Remaining value']
+    };
 
     function Z(zh, en) { return KC.lang() === 'en' ? en : zh; }
     function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -74,7 +80,7 @@
     }
     // live sample: the page itself is previewing the draft fonts through --font-sans / --font-mono
     function fontSample(kind) {
-      return '<div class="m-font-sample' + (kind === 'mono' ? ' mono' : '') + '">' + (kind === 'mono' ? 'CPU 12.5% · 1.2 GB/s · 0123456789 · 延迟 38 ms' : 'Horizon 集群节点 · Cluster Infrastructure Nodes') + '</div>';
+      return '<div class="m-font-sample' + (kind === 'mono' ? ' mono' : '') + '">' + (kind === 'mono' ? 'CPU 12.5% · 1.2 GB/s · 0123456789 · 延迟 38 ms' : 'Komari-Theme-Horizon-For-PTer 集群节点 · Cluster Infrastructure Nodes') + '</div>';
     }
     function sAppearance() {
       var sansCustom = D.fontSans === 'custom', monoCustom = D.fontMono === 'custom';
@@ -174,6 +180,19 @@
             '<button type="button" class="m-icon" data-move="' + esc(g) + '" data-dir="-1" aria-label="' + Z('上移 ', 'Move up ') + esc(g) + '"' + (i === 0 ? ' disabled' : '') + '>' + icon('chevron-up') + '</button>' +
             '<button type="button" class="m-icon" data-move="' + esc(g) + '" data-dir="1" aria-label="' + Z('下移 ', 'Move down ') + esc(g) + '"' + (i === gs.length - 1 ? ' disabled' : '') + '>' + icon('chevron-down') + '</button></li>';
         }).join('') + '</ol>' : '<div class="m-empty">' + Z('暂无分组（节点未设置分组时无需排序）', 'No groups yet (set groups on the nodes in the Komari admin).') + '</div>') +
+        sub(Z('总览卡片', 'Overview cards'), Z('关闭后首页顶部不再显示该卡片；上下按钮调整显示顺序。开关与顺序对桌面端和移动端同时生效。', 'A turned-off card disappears from the overview; the arrows change the order. Applies to desktop and mobile alike.'),
+          (function () {
+            var off = KC.toList(D.overviewHidden), all = KC.panelOrderAll(KC.normalizeSettings(D)), locked = !D.showHomeOverview;
+            return '<ol class="m-order' + (locked ? ' is-off' : '') + '">' + all.map(function (k, i) {
+              var lab = PANEL_LABELS[k] || [k, k];
+              var note = k === 'asset' && !D.showRemainingValue ? '<small style="margin-left:6px;font-size:11px;color:var(--monitor-muted)">' + Z('（08 花费 中已关闭）', ' (off in 08 Costs)') + '</small>' : '';
+              return '<li class="monitor-surface-secondary"><span class="m-idx">' + (i + 1) + '</span>' +
+                '<span class="m-name">' + esc(Z(lab[0], lab[1])) + note + '</span>' +
+                '<label class="m-toggle m-sw"><input type="checkbox" data-otoggle="' + k + '"' + (off.indexOf(k) < 0 ? ' checked' : '') + (locked ? ' disabled' : '') + '><span class="m-switch" aria-hidden="true"></span></label>' +
+                '<button type="button" class="m-icon" data-omove="' + k + '" data-dir="-1" aria-label="' + Z('上移 ', 'Move up ') + esc(Z(lab[0], lab[1])) + '"' + (locked || i === 0 ? ' disabled' : '') + '>' + icon('chevron-up') + '</button>' +
+                '<button type="button" class="m-icon" data-omove="' + k + '" data-dir="1" aria-label="' + Z('下移 ', 'Move down ') + esc(Z(lab[0], lab[1])) + '"' + (locked || i === all.length - 1 ? ' disabled' : '') + '>' + icon('chevron-down') + '</button></li>';
+            }).join('') + '</ol>' + (locked ? '<div class="m-help">' + Z('「显示顶部总览」已关闭，开启后才能调整卡片。', 'Turn on "Show overview" above to edit these cards.') + '</div>' : '');
+          })()) +
         sub(Z('总览评级', 'Overview ratings'), Z('在实时速率、累计流量、剩余价值卡片右下角显示文字评级；名称用英文逗号分隔，只取前四个。', 'Text rating on the throughput, traffic and remaining-value cards; comma-separated, first four names are used.'),
           '<div class="m-row-end">' + toggle('showOverviewRatings', Z('启用', 'Enabled'), '') + '</div>' +
           '<div class="m-grid4">' +
@@ -241,6 +260,7 @@
       return section('07', kicker('07'), Z('流量重置日与校准', 'Traffic reset day and calibration'), Z('按服务器设置每月流量重置日，并可校准本周期已用流量或手动清零。“按重置日统计”会用 Komari 记录的累计计数器逐段累加本周期流量（自动处理重启后计数归零）；校准点会作为新的起算基准，直到下一个重置日。', 'Set a monthly reset day per server, calibrate this cycle\'s usage or reset it. "Count by reset day" adds up Komari\'s cumulative counters for the cycle (counter resets after reboots are handled); a calibration becomes the new starting point until the next reset day.'),
         '<div class="m-grid3">' +
           sub(Z('统计模式', 'Counting mode'), '', seg('trafficMode', [['agent', Z('探针计数', 'Agent counter')], ['theme', Z('按重置日统计', 'Count by reset day')]]) + '<div class="m-help">' + (D.trafficMode === 'theme' ? Z('主题按重置日自动开始新周期，适合探针未设置 <code>--month-rotate</code> 的节点。', 'The theme starts a new cycle on each reset day; for agents without <code>--month-rotate</code>.') : Z('直接显示 Komari 探针上报的累计流量（由探针的 <code>--month-rotate</code> 决定何时归零）；重置日仅用于显示倒计时。已校准的节点在本周期内仍按校准值累加。', 'Shows the agent\'s cumulative counter (reset by the agent\'s <code>--month-rotate</code>); the reset day only drives the countdown. Calibrated nodes still count from the calibration this cycle.')) + '</div>') +
+          sub(Z('卡片统计范围', 'Card range'), Z('流量卡片默认显示哪个窗口。访客可在卡片上临时切换，该选择只存在浏览器里，不会写回主题设置。', 'Which window the traffic card shows by default. Visitors can switch it on the card; that choice stays in their browser and is not saved here.'), seg('trafficCardRange', [['cycle', Z('本周期', 'Cycle')], ['today', Z('今日', 'Today')]])) +
           sub(Z('默认重置日', 'Default reset day'), Z('未单独设置的服务器使用此规则。', 'Used by servers without their own setting.'), select('trafficResetDefault', dayOpts) + '<div class="m-inline">' + Z('时区', 'Time zone') + ' UTC ' + input('trafficResetUtcOffset', '8', 'number', ' min="-12" max="14" step="0.5" style="width:80px"') + '<small>' + Z('所有访客按同一时区计算周期边界。', 'Every visitor uses the same cycle boundaries.') + '</small></div>') +
           sub(Z('显示', 'Display'), '', toggle('showResetCountdown', Z('显示重置倒计时', 'Show reset countdown'), Z('在卡片标签区显示 “↻ 12d”。', 'Shows "↻ 12d" among the card chips.'))) +
         '</div>' +
@@ -372,7 +392,7 @@
       var y = window.scrollY;
       var active = document.activeElement && document.activeElement.id;
       page.innerHTML = '<div class="manage-root container">' +
-        '<div class="m-masthead"><div><div class="m-kicker big">HORIZON · ' + Z('主题控制台', 'THEME CONSOLE') + langSwitch() + '</div><h1>' + Z('主题设置', 'Theme settings') + '</h1><p>' + Z('集中调整 Horizon 的展示偏好、背景、费用与首页延迟绑定；保存后立即应用到当前站点。', 'Display preferences, background, costs and latency probes for Horizon; saved settings apply to the site right away.') + '</p></div>' +
+        '<div class="m-masthead"><div><div class="m-kicker big">KOMARI-THEME-HORIZON-FOR-PTER · ' + Z('主题控制台', 'THEME CONSOLE') + langSwitch() + '</div><h1>' + Z('主题设置', 'Theme settings') + '</h1><p>' + Z('集中调整 Komari-Theme-Horizon-For-PTer 的展示偏好、背景、费用与首页延迟绑定；保存后立即应用到当前站点。', 'Display preferences, background, costs and latency probes for Komari-Theme-Horizon-For-PTer; saved settings apply to the site right away.') + '</p></div>' +
           '<dl class="m-meta"><div><dt>' + Z('主题', 'Theme') + '</dt><dd>' + esc(theme.charAt(0).toUpperCase() + theme.slice(1)) + '</dd></div><div><dt>' + Z('节点', 'Nodes') + '</dt><dd>' + S.allNodes.length + '</dd></div><div><dt>' + Z('Ping 任务', 'Ping tasks') + '</dt><dd>' + S.pingTasks.length + '</dd></div><div><dt>' + Z('单独覆盖', 'Overrides') + '</dt><dd>' + overrideCount() + '</dd></div></dl></div>' +
         '<nav class="m-toc">' + TOC.map(function (x) { return '<a href="#m-' + x[0] + '"><span>' + x[0] + '</span>' + Z(x[1], x[2]) + '</a>'; }).join('') + '</nav>' +
         sAppearance() + sView() + sBackground() + sHome() + sHidden() + sCards() + sTraffic() + sCost() + sLatency() + sAdvanced() +
@@ -414,6 +434,13 @@
     });
     page.addEventListener('change', function (e) {
       var el = e.target;
+      if (el.dataset.otoggle) {
+        var okey = el.dataset.otoggle, hid = KC.toList(D.overviewHidden), hi = hid.indexOf(okey);
+        if (el.checked && hi >= 0) hid.splice(hi, 1);
+        else if (!el.checked && hi < 0) hid.push(okey);
+        D.overviewHidden = hid; ui.msg = ''; ui.err = ''; render();
+        return;
+      }
       if (el.dataset.slot != null) {
         var ids = D.cardProbeTaskIds.slice(); ids[Number(el.dataset.slot)] = el.value;
         D.cardProbeTaskIds = ids.slice(0, D.probeCount).map(function (x) { return x || ''; });
@@ -466,6 +493,12 @@
       if (mv) {
         var gs = groups(), i = gs.indexOf(mv.dataset.move), j = i + Number(mv.dataset.dir);
         if (i >= 0 && j >= 0 && j < gs.length) { var tmp = gs[i]; gs[i] = gs[j]; gs[j] = tmp; D.groupOrder = gs; render(); }
+        return;
+      }
+      var om = t.closest('[data-omove]');
+      if (om) {
+        var all = KC.panelOrderAll(KC.normalizeSettings(D)), oi = all.indexOf(om.dataset.omove), oj = oi + Number(om.dataset.dir);
+        if (oi >= 0 && oj >= 0 && oj < all.length) { var otmp = all[oi]; all[oi] = all[oj]; all[oj] = otmp; D.overviewOrder = all; render(); }
         return;
       }
       var cs = t.closest('[data-calset]');

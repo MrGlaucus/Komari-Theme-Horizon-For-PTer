@@ -1,5 +1,5 @@
 /*
- * Horizon demo — a simulated Komari backend that runs in the browser.
+ * Komari-Theme-Horizon-For-PTer demo — a simulated Komari backend that runs in the browser.
  * Intercepts fetch('/api/*') and WebSocket('/api/clients') so the unmodified theme can run on a static host.
  * All numbers are generated deterministically from the clock: every visitor sees the same cluster.
  */
@@ -7,7 +7,7 @@
   'use strict';
   var GB = 1073741824, MB = 1048576, KB = 1024, H = 3600e3, D = 86400e3;
   var OFFSET = 8 * H; // traffic cycles in UTC+8
-  var SETTINGS_KEY = 'horizon-demo-settings';
+  var SETTINGS_KEY = 'horizon-for-pter-demo-settings';
   var T0 = Date.now();
 
   // ---- deterministic noise ------------------------------------------------
@@ -264,7 +264,7 @@
 
   function handle(u, init) {
     var p = u.pathname.replace(/^.*?(\/api\/)/, '/api/'), q = u.searchParams, method = (init && init.method || 'GET').toUpperCase();
-    if (p === '/api/public') return respond(ok({ sitename: 'Horizon', description: 'Horizon theme demo for Komari Monitor', private_site: false, theme: 'horizon', theme_settings: currentSettings(), record_preserve_time: RET_H }));
+    if (p === '/api/public') return respond(ok({ sitename: 'Komari-Theme-Horizon-For-PTer', description: 'Komari-Theme-Horizon-For-PTer demo for Komari Monitor', private_site: false, theme: 'horizon-for-pter', theme_settings: currentSettings(), record_preserve_time: RET_H }));
     if (p === '/api/me') return respond({ username: 'demo', logged_in: true });
     if (p === '/api/nodes') return respond(ok(NODES.map(node)));
     if (p === '/api/task/ping') return respond(ok(TASKS.map(function (t, k) {
@@ -316,7 +316,7 @@
   ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k, i) { window.WebSocket[k] = i; });
 
   // ---- demo ribbon --------------------------------------------------------
-  var REPO = 'https://github.com/Dowsion-dev/Komari-Theme-Horizon';
+  var REPO = 'https://github.com/Dowsion-dev/Komari-Theme-Horizon-For-PTer';
   function ribbon() {
     if (new URLSearchParams(location.search).get('view') === 'theme-manage') return;
     var css = document.createElement('style');
@@ -330,7 +330,7 @@
       '@media (max-width:520px){.hz-demo .long{display:none}}';
     document.head.appendChild(css);
     var el = document.createElement('div'), lang = '';
-    try { lang = localStorage.getItem('komari-horizon-lang') || ''; } catch (e) { /* ignore */ }
+    try { lang = localStorage.getItem('komari-horizon-for-pter-lang') || ''; } catch (e) { /* ignore */ }
     var zh = lang ? lang === 'zh' : /^zh/i.test(navigator.language || '');
     el.className = 'hz-demo';
     el.innerHTML = '<span class="t"><b>' + (zh ? '演示站' : 'Demo') + '</b><span class="long">' + (zh ? ' · 数据为浏览器内模拟，设置只保存在本机' : ' · simulated data; settings stay in this browser') + '</span></span>' +

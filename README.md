@@ -1,12 +1,12 @@
-# Horizon · Komari 主题
+# Komari-Theme-Horizon-For-PTer · Komari 主题
 
 高密度、控制台风格的 [Komari Monitor](https://github.com/komari-monitor/komari) 公开状态页主题。一屏俯瞰整个集群：总览、节点卡片、流量周期、延迟探针与历史图表。
 
 纯 HTML / CSS / JS，无需构建。
 
-**在线演示**：<https://demos.dowsion.com> — 15 台模拟节点，覆盖 CN / HK / JP / US / DE，按 线路机 / 落地机 / 家宽 分组；数据在浏览器内模拟，右上角齿轮可体验主题设置（只保存在本机）。
+**在线演示**：<https://mrglaucus.github.io/Komari-Theme-Horizon-For-PTer/> — 15 台模拟节点，覆盖 CN / HK / JP / US / DE，按 线路机 / 落地机 / 家宽 分组；数据在浏览器内模拟，右上角齿轮可体验主题设置（只保存在本机）。
 
-<p align="center"><img src="preview.png" alt="Horizon preview" width="90%"></p>
+<p align="center"><img src="preview.png" alt="Komari-Theme-Horizon-For-PTer preview" width="90%"></p>
 
 ## 功能
 
@@ -23,8 +23,8 @@
 
 ## 安装
 
-1. 到 [Releases](https://github.com/Dowsion-dev/Komari-Theme-Horizon/releases/latest) 下载 `Komari-Theme-Horizon-vX.Y.Z.zip`
-2. Komari 后台 → **设置 → 主题** → 上传 zip → 选中 **Horizon**
+1. 到 [Releases](../../releases/latest) 下载 `Komari-Theme-Horizon-For-PTer-vX.Y.Z.zip`
+2. Komari 后台 → **设置 → 主题** → 上传 zip → 选中 **Komari-Theme-Horizon-For-PTer**
 3. 登录后打开首页，点击右上角 **⚙ 齿轮** 进入主题设置（也可直接访问 `/?view=theme-manage`）
 
 > 站点在 Cloudflare 等 CDN 后面也没关系：资源地址带版本号（如 `app.css?v=1.4.0`），升级后会自动拿到新文件。

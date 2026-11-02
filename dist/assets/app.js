@@ -1,5 +1,5 @@
 /*!
- * Horizon — a Komari Monitor theme: a dense, console-style public dashboard for Komari Monitor.
+ * Komari-Theme-Horizon-For-PTer — a Komari Monitor theme: a dense, console-style public dashboard for Komari Monitor.
  * Vanilla JS, no build step. Data comes from Komari's public API:
  *   GET  /api/public, /api/nodes, /api/me, /api/task/ping
  *   GET  /api/records/load?uuid&load_type=all&hours, /api/records/ping?uuid&hours
@@ -171,7 +171,7 @@
         var u = String(url || '').trim();
         if (/^(https?:)?\/\//i.test(u) || u.charAt(0) === '/') {
           if (/\.(woff2?|ttf|otf)(\?.*)?$/i.test(u)) {
-            var name = family ? family.split(',')[0].replace(/"/g, '') : 'Horizon ' + role;
+            var name = family ? family.split(',')[0].replace(/"/g, '') : 'Komari-Theme-Horizon-For-PTer ' + role;
             if (!family) family = '"' + name + '"';
             faces.push('@font-face{font-family:"' + name + '";src:url("' + u.replace(/["\\]/g, '') + '");font-display:swap;font-weight:100 900}');
           } else css.push(u);
@@ -183,7 +183,7 @@
     var mono = T.fontMono === 'sans' ? sans : pick(FONT_MONO, T.fontMono, T.fontMonoUrl, T.fontMonoFamily, MONO_FALLBACK, 'Mono');
     return { css: css.filter(function (u, i, a) { return a.indexOf(u) === i; }), faces: faces, sans: sans, mono: mono };
   }
-  var FONT_KEY = 'komari-horizon-font';
+  var FONT_KEY = 'komari-horizon-for-pter-font';
   function applyFonts(T, persist) {
     var plan = fontPlan(T), head = document.head;
     var want = {}; plan.css.forEach(function (u) { want[u] = true; });
@@ -199,7 +199,7 @@
   }
 
   // custom browser-tab icon (cached so index.html can set it before the first paint)
-  var ICON_KEY = 'komari-horizon-favicon', defaultIcon = null;
+  var ICON_KEY = 'komari-horizon-for-pter-favicon', defaultIcon = null;
   function applyFavicon(T, persist) {
     var link = document.querySelector('link[rel~="icon"]');
     if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
@@ -228,6 +228,7 @@
     enableGlass: true, glassBlur: 18,
     // 04 home
     enableHeaderAutoHide: false, headerVisibleSeconds: 10, showHomeOverview: true, showGroupFilter: true, showRegionFilter: true,
+    overviewOrder: [], overviewHidden: [],
     showCardGroup: true, groupSections: false, enableHomeSort: true, homeSortField: 'default', homeSortDirection: 'asc', groupOrder: [],
     hideAdminEntryWhenLoggedOut: false,
     showOverviewRatings: true, ratingStyle: 'general', showTrafficRating: true, showBandwidthRating: true, showAssetRating: true,
@@ -239,6 +240,7 @@
     // 07 traffic cycle
     trafficMode: 'agent', trafficResetDefault: 'expiry', trafficResetUtcOffset: 8, trafficResetTz: {}, showResetCountdown: true,
     trafficResetDays: {}, trafficCalib: {}, trafficAutoCheckpoint: false, trafficCheckpointHours: 12,
+    trafficCardRange: 'cycle',
     // 08 cost
     showCostsToGuests: true, showRemainingValue: true, baseCurrency: 'USD', costRateApiUrl: 'https://api.frankfurter.dev/v2/rates?base=USD',
     costIgnoredNodes: [], expiryWarningDays: 30,
@@ -259,6 +261,13 @@
   };
   var SORT_FIELDS = [['default', 'Default', '默认'], ['name', 'Name', '名称'], ['region', 'Region', '地区'], ['cpu', 'CPU', 'CPU'], ['memory', 'Memory', '内存'], ['disk', 'Storage', '硬盘'], ['netRate', 'Net Rate', '实时速率'], ['traffic', 'Traffic', '流量'], ['uptime', 'Uptime', '在线时长'], ['price', 'Price', '价格'], ['expiry', 'Expiry', '到期']];
   var SORT_NATURAL = { default: 'asc', name: 'asc', region: 'asc', expiry: 'asc' };
+  // overview panels, in the order they appear when the visitor never reordered them.
+  // `overviewOrder` only stores the visitor's explicit order and `overviewHidden` the panels turned
+  // off, so a panel added in a later version still shows up for people who saved settings before it existed.
+  var PANEL_KEYS = ['status', 'cpu', 'memory', 'disk', 'throughput', 'traffic', 'asset'];
+  // the traffic card can show either the billing cycle or the current day. `trafficCardRange` is the
+  // site-wide default; a visitor's own pick lives in localStorage only and is never written back.
+  var RANGE_KEY = 'horizon-for-pter.trafficRange';
 
   function toList(v) {
     if (Array.isArray(v)) return v.map(function (x) { return String(x).trim(); }).filter(Boolean);
@@ -296,12 +305,31 @@
     out.refreshIntervalMs = clamp(out.refreshIntervalMs || 2000, 1000, 60000);
     out.trafficResetUtcOffset = clamp(out.trafficResetUtcOffset, -12, 14);
     out.trafficCheckpointHours = clamp(Math.round(out.trafficCheckpointHours) || 12, 1, 168);
+    out.overviewOrder = toList(out.overviewOrder).filter(function (k) { return PANEL_KEYS.indexOf(k) >= 0; });
+    out.overviewHidden = toList(out.overviewHidden).filter(function (k) { return PANEL_KEYS.indexOf(k) >= 0; });
     if (!/^(agent|theme)$/.test(out.trafficMode)) out.trafficMode = 'agent';
+    if (!/^(cycle|today)$/.test(out.trafficCardRange)) out.trafficCardRange = 'cycle';
     if (!/^(auto|zh|en)$/.test(out.defaultLanguage)) out.defaultLanguage = 'auto';
     if (!FONT_SANS[out.fontSans]) out.fontSans = 'default';
     if (!FONT_MONO[out.fontMono]) out.fontMono = 'default';
     if (!/^(asc|desc)$/.test(out.homeSortDirection)) out.homeSortDirection = SORT_NATURAL[out.homeSortField] || 'desc';
     return out;
+  }
+  // every known panel key, reordered by `overviewOrder`; keys the visitor never touched keep the
+  // default relative order and end up last, so new panels never vanish from saved settings
+  function panelOrderAll(T) {
+    var order = [];
+    toList(T.overviewOrder).forEach(function (k) { if (PANEL_KEYS.indexOf(k) >= 0 && order.indexOf(k) < 0) order.push(k); });
+    PANEL_KEYS.forEach(function (k) { if (order.indexOf(k) < 0) order.push(k); });
+    return order;
+  }
+  function panelOrder(T) {
+    var hidden = toList(T.overviewHidden);
+    return panelOrderAll(T).filter(function (k) { return hidden.indexOf(k) < 0; });
+  }
+  // panels that actually render: the asset card also needs its own switch in 08 and visitor permission
+  function visiblePanels(T) {
+    return panelOrder(T).filter(function (k) { return k !== 'asset' || (T.showRemainingValue && canSeeCosts()); });
   }
   function ratingLabels(kind, T) {
     var style = T.ratingStyle === 'cultivation' ? 'cultivation' : S.lang === 'zh' ? 'generalZh' : 'general';
@@ -356,7 +384,7 @@
     modal: null,
     lang: 'en'
   };
-  var LANG_KEY = 'komari-horizon-lang';
+  var LANG_KEY = 'komari-horizon-for-pter-lang';
   function pickLang() {
     var saved = S.T.showLanguageToggle ? lsGet(LANG_KEY, '') : '';
     if (saved === 'zh' || saved === 'en') return saved;
@@ -364,7 +392,7 @@
     return /^zh/i.test(navigator.language || '') ? 'zh' : 'en';
   }
   function applyLangAttr() { document.documentElement.lang = S.lang === 'zh' ? 'zh-CN' : 'en'; }
-  var SCHEME_KEY = 'komari-horizon-scheme';
+  var SCHEME_KEY = 'komari-horizon-for-pter-scheme';
   function isMobile() { return window.matchMedia('(max-width: 720px)').matches; }
   function canSeeCosts() { return S.me.logged_in || S.T.showCostsToGuests; }
 
@@ -515,8 +543,10 @@
                 }).join('') +
               '</div>' +
               (T.showLanguageToggle ? langToggle() : '') +
-              (S.me.logged_in ? '<a href="/?view=theme-manage" class="icon-btn monitor-control monitor-hover" title="' + _t('Theme settings', '主题设置') + '" aria-label="' + _t('Theme settings', '主题设置') + '">' + icon('settings') + '</a>' : '') +
-              (showAdmin ? '<a href="/admin" class="control-room" id="admin-link">' + (S.me.logged_in ? _t('Admin Panel', '控制台') : _t('Admin Login', '后台登录')) + icon('arrow-right') + '</a>' : '') +
+              // theme settings first, then the komari admin pill as the trailing action on both
+              // breakpoints; the gear marks the admin entry (it is the system settings)
+              (S.me.logged_in ? '<a href="/?view=theme-manage" class="icon-btn monitor-control monitor-hover" title="' + _t('Theme settings', '主题设置') + '" aria-label="' + _t('Theme settings', '主题设置') + '">' + icon('sliders-horizontal') + '</a>' : '') +
+              (showAdmin ? '<a href="/admin" class="control-room" id="admin-link"><span class="cr-label">' + (S.me.logged_in ? _t('Admin Panel', '控制台') : _t('Admin Login', '后台登录')) + '</span>' + icon('settings', 'cr-icon') + '</a>' : '') +
             '</div>' +
           '</div>';
   }
@@ -533,6 +563,7 @@
         '<header class="monitor-header" data-product="' + esc(T.productLabel) + '">' + headerInner() + '</header>' +
         '<main class="monitor-page" id="page"></main>' +
         '<dialog class="gemini-modal node-details-modal monitor-surface-primary" id="modal" aria-labelledby="modal-title"></dialog>' +
+        '<dialog class="gemini-modal traffic-detail-modal monitor-surface-primary" id="traffic-modal" aria-labelledby="traffic-modal-title"></dialog>' +
       '</div>';
     var header = $('.monitor-header');
     var setH = function () { $('.monitor-app').style.setProperty('--monitor-header-height', header.offsetHeight + 'px'); };
@@ -545,7 +576,7 @@
 
   function dashboardMarkup() {
     var T = S.T;
-    return (T.showHomeOverview ? '<section class="container stats-wrap"><div class="stats-grid" id="stats"></div></section>' : '<div style="height:8px"></div>') +
+    return (T.showHomeOverview && visiblePanels(T).length ? '<section class="container stats-wrap"><div class="stats-grid" id="stats"></div></section>' : '<div style="height:8px"></div>') +
       '<div class="container toolbar-wrap"><div class="monitor-node-toolbar monitor-divider">' +
         '<div class="toolbar-title"><div class="icon">' + icon('server') + '</div><h2>' + esc(T.nodesTitle === DEFAULTS.nodesTitle ? _t(T.nodesTitle, '集群节点') : T.nodesTitle) + '</h2>' +
         '<div class="view-toggle monitor-control" role="group" aria-label="' + _t('Card view', '卡片视图') + '">' +
@@ -615,35 +646,67 @@
     root.addEventListener('change', function (e) {
       if (e.target.id === 'sort-field') {
         S.sort.field = e.target.value; S.sort.dir = SORT_NATURAL[S.sort.field] || 'desc';
-        lsSet('komari-horizon-sort', S.sort.field + ':' + S.sort.dir);
+        lsSet('komari-horizon-for-pter-sort', S.sort.field + ':' + S.sort.dir);
         renderFilters(); renderGrid();
       }
     });
     root.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      // the range switch lives inside the clickable card; it must keep its own activation
+      if (e.target.closest && e.target.closest('[data-trange]')) return;
+      var td = e.target.closest && e.target.closest('[data-traffic-detail]');
+      if (td) { e.preventDefault(); openTrafficDetail(); return; }
       var card = e.target.closest && e.target.closest('.node-monitor-card');
-      if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openModal(card.dataset.uuid); }
+      if (card) { e.preventDefault(); openModal(card.dataset.uuid); }
     });
     var dlg = $('#modal');
     dlg.addEventListener('close', function () { S.modal = null; dlg.innerHTML = ''; });
     dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+    var tdlg = $('#traffic-modal');
+    if (tdlg) {
+      tdlg.addEventListener('close', function () { S.trafficDetail = null; tdlg.innerHTML = ''; });
+      tdlg.addEventListener('click', function (e) { if (e.target === tdlg) tdlg.close(); });
+    }
   }
 
+  // below 768px the header collapses the scheme and language groups to their active button only,
+  // so a click there has to advance to the next mode instead of re-selecting the visible one
+  function isNarrowHeader() { return !!(window.matchMedia && window.matchMedia('(max-width: 767px)').matches); }
   function onClick(e) {
     var t = e.target;
     if (t.closest('.manage-root')) return; // the settings page handles its own clicks
+    var rng = t.closest('[data-trange]');
+    if (rng) { setTrafficRange(rng.dataset.trange); return; }
+    if (t.closest('[data-traffic-detail]')) { openTrafficDetail(); return; }
     var b = t.closest('[data-scheme]');
-    if (b) { S.scheme = b.dataset.scheme; lsSet(SCHEME_KEY, S.scheme); applyScheme(); return; }
+    if (b) {
+      if (isNarrowHeader()) { var order = ['light', 'dark', 'system']; S.scheme = order[(order.indexOf(S.scheme) + 1) % order.length]; }
+      else S.scheme = b.dataset.scheme;
+      lsSet(SCHEME_KEY, S.scheme); applyScheme(); return;
+    }
     var lg = t.closest('[data-lang]');
-    if (lg) { setLang(lg.dataset.lang); return; }
+    if (lg) { setLang(isNarrowHeader() ? (S.lang === 'zh' ? 'en' : 'zh') : lg.dataset.lang); return; }
     var v = t.closest('[data-view]');
-    if (v) { S.view = v.dataset.view; lsSet('komari-horizon-view-' + (isMobile() ? 'm' : 'd'), S.view); renderGrid(); return; }
+    if (v) { S.view = v.dataset.view; lsSet('komari-horizon-for-pter-view-' + (isMobile() ? 'm' : 'd'), S.view); renderGrid(); return; }
     if (t.closest('#sort-dir')) {
       S.sort.dir = S.sort.dir === 'asc' ? 'desc' : 'asc';
-      lsSet('komari-horizon-sort', S.sort.field + ':' + S.sort.dir);
+      lsSet('komari-horizon-for-pter-sort', S.sort.field + ':' + S.sort.dir);
       renderFilters(); renderGrid(); return;
     }
     var f = t.closest('[data-filter]');
     if (f) { var kind = f.dataset.filter, val = f.dataset.value; S.filter[kind] = S.filter[kind] === val ? '' : val; renderAll(); return; }
+    var tdt = t.closest('[data-td-toggle]');
+    if (tdt && S.trafficDetail) {
+      var tdlg2 = $('#traffic-modal'), keep = tdlg2 ? tdlg2.scrollTop : 0;
+      var o = S.trafficDetail.open || (S.trafficDetail.open = {});
+      var key = tdt.dataset.tdToggle;
+      if (o[key]) delete o[key]; else o[key] = 1;
+      renderTrafficDetail();
+      // the whole list is rebuilt, so put the reader back where they were
+      if (tdlg2) tdlg2.scrollTop = keep;
+      return;
+    }
+    if (t.closest('[data-tclose]')) { var tdl = $('#traffic-modal'); if (tdl) tdl.close(); return; }
     if (t.closest('[data-close]')) { $('#modal').close(); return; }
     var mm = t.closest('[data-metric]');
     if (mm && S.modal) { S.modal.metric = mm.dataset.metric; S.modal.hover = null; renderModalCharts(); return; }
@@ -786,6 +849,29 @@
     if (now >= thisStart) { start = thisStart; next = at(m + 1); } else { start = at(m - 1); next = thisStart; }
     return { start: start, next: next, day: day, tz: tz, daysLeft: Math.max(0, Math.ceil((next - now) / 86400e3)) };
   }
+  // "today" reuses the cycle's time zone so both windows share one coordinate system: a visitor in
+  // another zone still sees the same numbers as the owner, and the two cards never disagree.
+  // The returned shape matches cycleBounds so the renderer does not need a second code path.
+  function dayBounds(now) {
+    var tz = S.T.trafficResetUtcOffset, shift = tz * 3600e3;
+    var l = new Date(now + shift);
+    var start = Date.UTC(l.getUTCFullYear(), l.getUTCMonth(), l.getUTCDate()) - shift;
+    return { start: start, next: start + 86400e3, day: l.getUTCDate(), tz: tz, daysLeft: 0, today: true };
+  }
+  function currentRange() {
+    var v = null;
+    try { v = localStorage.getItem(RANGE_KEY); } catch (e) { /* private mode: fall back to the default */ }
+    if (v === 'today' || v === 'cycle') return v;
+    return S.T.trafficCardRange === 'today' ? 'today' : 'cycle';
+  }
+  function setTrafficRange(v) {
+    v = v === 'today' ? 'today' : 'cycle';
+    if (v === currentRange()) return;
+    try { localStorage.setItem(RANGE_KEY, v); } catch (e) { /* private mode: applies to this page only */ }
+    // repaint first so the card never shows a "today" heading over a cycle-sized number
+    withAnchor(function () { renderStats(); renderGrid(); });
+    loadTraffic(true);
+  }
   function calibFor(n) {
     var c = (S.T.trafficCalib || {})[n.uuid];
     if (!c || !c.at) return null;
@@ -794,24 +880,49 @@
   }
   function counterDelta(prev, cur) { return cur >= prev ? cur - prev : cur; }
   // decides how a node's cycle usage is computed
-  function trafficPlan(n, now) {
-    var cyc = cycleBounds(resetDayFor(n), now || Date.now(), tzFor(n)), c = calibFor(n);
+  function trafficPlan(n, now, win) {
+    now = now || Date.now();
+    var c = calibFor(n);
+    if (win === 'today') {
+      // today always counts from raw records: the agent counter is a lifetime total and knows
+      // nothing about midnight, and a calibration point is a cycle snapshot with no meaning here
+      var day = dayBounds(now);
+      return { cyc: day, calib: null, engine: true, winStart: day.start, today: true, key: 'today:' + day.start };
+    }
+    var cyc = cycleBounds(resetDayFor(n), now, tzFor(n));
     var calibValid = c && (!cyc || c.t >= cyc.start);
     var engine = calibValid || (S.T.trafficMode === 'theme' && !!cyc);
     var winStart = calibValid ? c.t : cyc ? cyc.start : null;
-    return { cyc: cyc, calib: calibValid ? c : null, engine: engine, winStart: winStart, key: engine ? winStart + ':' + (calibValid ? c.up + ':' + c.down + ':' + c.cu + ':' + c.cd : 'cycle') : 'agent' };
+    return { cyc: cyc, calib: calibValid ? c : null, engine: engine, winStart: winStart, today: false, key: engine ? winStart + ':' + (calibValid ? c.up + ':' + c.down + ':' + c.cu + ':' + c.cd : 'cycle') : 'agent' };
   }
-  function trafficOf(n) {
+  // one cache slot per window, so switching ranges never evicts the other window's numbers
+  function trafficSlot(uuid, win) {
+    var box = S.traffic[uuid];
+    return box && box[win] ? box[win] : null;
+  }
+  function trafficOf(n, win) {
+    win = win || currentRange();
     var r = rep(n.uuid) || {}, net = r.network || {};
     var liveUp = num(net.totalUp), liveDown = num(net.totalDown);
-    var plan = trafficPlan(n), st = S.traffic[n.uuid];
-    var out = { up: liveUp, down: liveDown, approx: false, engine: plan.engine, cyc: plan.cyc, calib: plan.calib, pending: false, mode: plan.engine ? 'cycle' : 'agent' };
+    var plan = trafficPlan(n, null, win), st = trafficSlot(n.uuid, win);
+    var out = { up: liveUp, down: liveDown, approx: false, engine: plan.engine, cyc: plan.cyc, calib: plan.calib, pending: false, range: win, today: !!plan.today, unknown: false, mode: plan.engine ? 'cycle' : 'agent' };
     if (!plan.engine) return out;
-    if (!st || st.key !== plan.key) { out.pending = true; if (plan.calib) { out.up = plan.calib.up; out.down = plan.calib.down; } return out; }
+    if (!st || st.key !== plan.key) {
+      out.pending = true;
+      if (plan.calib) { out.up = plan.calib.up; out.down = plan.calib.down; }
+      else {
+        // deliberately no counter fallback: the agent total is a lifetime figure and would jump by
+        // tens of terabytes for the split second a range switch takes to load, so callers show a dash
+        out.unknown = true; out.up = 0; out.down = 0;
+      }
+      return out;
+    }
     var hasLive = !!(r.network && (liveUp || liveDown));
-    out.up = st.offUp + st.sumUp + (st.lastUp != null && hasLive ? counterDelta(st.lastUp, liveUp) : 0);
-    out.down = st.offDown + st.sumDown + (st.lastDown != null && hasLive ? counterDelta(st.lastDown, liveDown) : 0);
+    out.up = (st.offUp || 0) + st.sumUp + (st.lastUp != null && hasLive ? counterDelta(st.lastUp, liveUp) : 0);
+    out.down = (st.offDown || 0) + st.sumDown + (st.lastDown != null && hasLive ? counterDelta(st.lastDown, liveDown) : 0);
     out.approx = st.approx;
+    out.peakUp = st.peakUp || 0;
+    out.peakDown = st.peakDown || 0;
     return out;
   }
   var BILL_LABEL = { max: ['MAX', 'Billed on the larger of in / out', '按入站 / 出站中较大者计费'], min: ['MIN', 'Billed on the smaller of in / out', '按入站 / 出站中较小者计费'], sum: ['SUM', 'Billed on in + out', '按入站 + 出站计费'], up: ['OUT', 'Billed on outbound only', '仅按出站计费'], down: ['IN', 'Billed on inbound only', '仅按入站计费'] };
@@ -822,37 +933,80 @@
     return type === 'sum' ? up + dn : type === 'min' ? Math.min(up, dn) : type === 'up' ? up : type === 'down' ? dn : Math.max(up, dn);
   }
   function trafficUsed(n, t) { return trafficUsedBy(String(n.traffic_limit_type || 'max').toLowerCase(), t); }
-  function loadTrafficFor(n, force) {
-    var now = Date.now(), plan = trafficPlan(n, now), st = S.traffic[n.uuid];
-    if (!plan.engine) { delete S.traffic[n.uuid]; return Promise.resolve(); }
+  // rates come from the cumulative counters, so the curve always agrees with the totals above it.
+  // a bucket keeps the max of its samples rather than the mean, otherwise a short spike disappears
+  // the moment the series is squeezed down to chart width
+  function bucketMax(pts, max) {
+    if (pts.length <= max) return pts;
+    var out = [], size = pts.length / max;
+    for (var i = 0; i < max; i++) {
+      var a = Math.floor(i * size), b = Math.min(pts.length, Math.floor((i + 1) * size));
+      if (b <= a) b = a + 1;
+      var mu = 0, md = 0;
+      for (var j = a; j < b; j++) { if (pts[j][1] > mu) mu = pts[j][1]; if (pts[j][2] > md) md = pts[j][2]; }
+      out.push([pts[b - 1][0], mu, md]);
+    }
+    return out;
+  }
+  function loadTrafficFor(n, force, win) {
+    win = win || currentRange();
+    var now = Date.now(), plan = trafficPlan(n, now, win);
+    if (!S.traffic[n.uuid]) S.traffic[n.uuid] = {};
+    var slot = S.traffic[n.uuid];
+    if (!plan.engine) { delete slot[win]; return Promise.resolve(); }
+    var st = slot[win];
     if (!force && st && st.key === plan.key && now - st.at < 10 * 60e3) return Promise.resolve();
-    if (S.trafficLoading[n.uuid]) return S.trafficLoading[n.uuid];
+    var lk = win + ':' + n.uuid;
+    if (S.trafficLoading[lk]) return S.trafficLoading[lk];
     var hours = Math.min(24 * 62, Math.max(1, Math.ceil((now - plan.winStart) / 3600e3) + 1));
     var p = getJSON('/api/records/load?uuid=' + encodeURIComponent(n.uuid) + '&load_type=network&hours=' + hours).then(unwrap).then(function (res) {
-      var recs = (res && res.records || []).map(function (x) { return { t: new Date(x.time).getTime(), up: num(x.net_total_up), down: num(x.net_total_down) }; })
+      var recs = (res && res.records || []).map(function (x) { return { t: new Date(x.time).getTime(), up: num(x.net_total_up), down: num(x.net_total_down), rin: num(x.net_in), rout: num(x.net_out) }; })
         .filter(function (x) { return x.t >= plan.winStart; }).sort(function (a, b) { return a.t - b.t; });
       var c = plan.calib, sumUp = 0, sumDown = 0, approx = false;
       var dts = []; for (var j = 1; j < recs.length; j++) dts.push(recs[j].t - recs[j - 1].t);
       dts.sort(function (a, b) { return a - b; });
       var tolerance = Math.max(30 * 60e3, 2 * (dts.length ? dts[Math.floor(dts.length / 2)] : 0));
       var lastUp = c && c.cu != null ? c.cu : null, lastDown = c && c.cd != null ? c.cd : null;
-      recs.forEach(function (x, i) {
+      var prevT = null, peakUp = 0, peakDown = 0, pts = [], mxIn = 0, mxOut = 0;
+      recs.forEach(function (x) {
+        if (x.rin > mxIn) mxIn = x.rin;
+        if (x.rout > mxOut) mxOut = x.rout;
         if (lastUp == null) {
           // no counter snapshot at the window start: begin at the first sample; a late first sample means the retention is shorter than the cycle
           if (x.t - plan.winStart > tolerance) approx = true;
-          lastUp = x.up; lastDown = x.down; return;
+          lastUp = x.up; lastDown = x.down; prevT = x.t; return;
         }
-        sumUp += counterDelta(lastUp, x.up); sumDown += counterDelta(lastDown, x.down);
-        lastUp = x.up; lastDown = x.down;
+        var du = counterDelta(lastUp, x.up), dd = counterDelta(lastDown, x.down);
+        sumUp += du; sumDown += dd;
+        var dt = prevT ? (x.t - prevT) / 1000 : 0;
+        if (dt > 0) {
+          var ru = du / dt, rd = dd / dt;
+          if (ru > peakUp) peakUp = ru;
+          if (rd > peakDown) peakDown = rd;
+          pts.push([x.t, ru, rd]);
+        }
+        lastUp = x.up; lastDown = x.down; prevT = x.t;
       });
+      // some agents report per-interval rates but no usable cumulative counter; fall back to those
+      // rather than showing a flat zero curve for every node
+      if (!peakUp && !peakDown && (mxIn || mxOut)) {
+        pts = [];
+        recs.forEach(function (x) {
+          if (x.rout > peakUp) peakUp = x.rout;
+          if (x.rin > peakDown) peakDown = x.rin;
+          pts.push([x.t, x.rout, x.rin]);
+        });
+      }
       if (!recs.length && lastUp == null) approx = true;
-      S.traffic[n.uuid] = { key: plan.key, at: Date.now(), offUp: c ? c.up : 0, offDown: c ? c.down : 0, sumUp: sumUp, sumDown: sumDown, lastUp: lastUp, lastDown: lastDown, approx: approx, firstT: recs.length ? recs[0].t : null };
-    }).catch(function () { /* keep previous */ }).then(function () { delete S.trafficLoading[n.uuid]; });
-    S.trafficLoading[n.uuid] = p;
+      slot[win] = { key: plan.key, at: Date.now(), offUp: c ? c.up : 0, offDown: c ? c.down : 0, sumUp: sumUp, sumDown: sumDown, lastUp: lastUp, lastDown: lastDown, approx: approx, firstT: recs.length ? recs[0].t : null,
+        peakUp: peakUp, peakDown: peakDown, series: bucketMax(pts, 120) };
+    }).catch(function () { /* keep previous */ }).then(function () { delete S.trafficLoading[lk]; });
+    S.trafficLoading[lk] = p;
     return p;
   }
   function loadTraffic(force) {
-    return Promise.all(S.allNodes.map(function (n) { return loadTrafficFor(n, force); })).then(function () { withAnchor(function () { renderStats(); renderGrid(); }); maybeCheckpoint(); });
+    var win = currentRange();
+    return Promise.all(S.allNodes.map(function (n) { return loadTrafficFor(n, force, win); })).then(function () { withAnchor(function () { renderStats(); renderGrid(); }); maybeCheckpoint(); });
   }
   // optional: logged-in admins periodically persist the running cycle usage as a calibration point,
   // so cycles survive a Komari record retention that is shorter than the billing cycle
@@ -862,10 +1016,12 @@
     if (checkpointDone || !S.me.logged_in || !T.trafficAutoCheckpoint || new URLSearchParams(location.search).get('view')) return;
     var now = Date.now(), changed = false, calib = JSON.parse(JSON.stringify(T.trafficCalib || {}));
     S.allNodes.forEach(function (n) {
-      var plan = trafficPlan(n, now), st = S.traffic[n.uuid], r = rep(n.uuid);
+      // a checkpoint is a cycle snapshot, so it always reads the cycle slot; when the visitor is
+      // looking at today that slot is cold and this round is skipped rather than costing 16 requests
+      var plan = trafficPlan(n, now, 'cycle'), st = trafficSlot(n.uuid, 'cycle'), r = rep(n.uuid);
       if (!plan.engine || !st || st.key !== plan.key || !r || !r.network || !isOnline(n.uuid)) return;
       if (plan.calib && now - plan.calib.t < T.trafficCheckpointHours * 3600e3) return;
-      var t = trafficOf(n);
+      var t = trafficOf(n, 'cycle');
       if (t.pending) return;
       calib[n.uuid] = { at: new Date(now).toISOString(), up: Math.round(t.up), down: Math.round(t.down), cu: num(r.network.totalUp), cd: num(r.network.totalDown), auto: true };
       changed = true;
@@ -874,7 +1030,171 @@
     if (!changed) return;
     var payload = {}; Object.keys(S.raw || {}).forEach(function (k) { payload[k] = S.raw[k]; });
     payload.trafficCalib = calib;
-    api.saveSettings(S.settings.theme || 'horizon', payload).then(function () { S.raw = payload; S.T.trafficCalib = calib; }).catch(function () { /* silent */ });
+    api.saveSettings(S.settings.theme || 'horizon-for-pter', payload).then(function () { S.raw = payload; S.T.trafficCalib = calib; }).catch(function () { /* silent */ });
+  }
+
+  // ---------------------------------------------------------------
+  // traffic detail dialog
+  // ---------------------------------------------------------------
+  // the window boundary as the owner sees it, not as the visitor's clock renders it
+  function winDate(t, tz) {
+    var d = new Date(t + tz * 3600e3);
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+  }
+  function openTrafficDetail() {
+    var dlg = $('#traffic-modal'); if (!dlg) return;
+    var win = currentRange(), nodes = visibleNodes();
+    var seq = (S.trafficDetailSeq || 0) + 1;
+    S.trafficDetailSeq = seq;
+    S.trafficDetail = { win: win, seq: seq, nodes: nodes, loading: true, open: {} };
+    renderTrafficDetail();
+    if (typeof dlg.showModal === 'function') { if (!dlg.open) dlg.showModal(); } else dlg.setAttribute('open', '');
+    // reuse the per-window cache: the overview card has usually filled it already, so this is free
+    Promise.all(nodes.map(function (n) { return loadTrafficFor(n, false, win); })).then(function () {
+      if (!S.trafficDetail || S.trafficDetail.seq !== seq) return;
+      S.trafficDetail.loading = false;
+      renderTrafficDetail();
+    });
+  }
+  function trafficDetailRows() {
+    var st = S.trafficDetail, win = st.win;
+    var items = st.nodes.map(function (n) {
+      var t = trafficOf(n, win);
+      return { n: n, t: t, total: t.unknown ? null : t.up + t.down };
+    });
+    // heaviest first; nodes still waiting for their records sink to the bottom instead of reading as 0
+    items.sort(function (a, b) {
+      if (a.total == null || b.total == null) return (a.total == null) - (b.total == null) || 0;
+      return b.total - a.total;
+    });
+    return items;
+  }
+  function trafficDetailSub(items, win) {
+    var tz = S.T.trafficResetUtcOffset, seg = [];
+    if (win === 'today') {
+      var d = dayBounds(Date.now());
+      // the title already says "today", so the date alone identifies the window; spelling out
+      // 00:00 – 24:00 only pushes the line into a wrap on narrow phones
+      seg.push(winDate(d.start, tz), tzLabel(tz));
+    } else {
+      // cycles are per node, so a single heading range is only honest when every node agrees
+      var seen = {}, one = null;
+      items.forEach(function (x) { if (x.t.cyc) { seen[x.t.cyc.start] = 1; one = one || x.t.cyc; } });
+      var keys = Object.keys(seen);
+      if (!keys.length) seg.push(_t('Lifetime counters (no billing cycle set)', '累计计数器（未设置计费周期）'));
+      else if (keys.length === 1) seg.push(winDate(one.start, one.tz) + ' → ' + winDate(one.next, one.tz), tzLabel(one.tz));
+      else seg.push(_t('Per-node billing cycles', '各节点独立计费周期'));
+    }
+    seg.push(_t(items.length + ' node' + (items.length > 1 ? 's' : ''), items.length + ' 个节点'));
+    // each chunk stays on one line and carries its own trailing separator, so a narrow header
+    // breaks between facts instead of leaving a lone "·" at the start of the second line
+    return seg.map(function (s, i) {
+      return '<span>' + esc(s) + (i < seg.length - 1 ? '<span class="td-sep" aria-hidden="true">·</span>' : '') + '</span>';
+    }).join('');
+  }
+  // a compact up/down rate curve for one node; x is stretched to the container while the stroke
+  // stays 1.5px thanks to vector-effect, so no measuring is needed on resize
+  function rateChart(series, win) {
+    if (!series || series.length < 2) return '<p class="td-chart-empty">' + _t('Not enough samples to draw a curve', '采样点不足，无法绘制曲线') + '</p>';
+    var tz = S.T.trafficResetUtcOffset, W = 300, H = 52, max = 0;
+    series.forEach(function (p) { if (p[1] > max) max = p[1]; if (p[2] > max) max = p[2]; });
+    if (!(max > 0)) max = 1;
+    var t0 = series[0][0], t1 = series[series.length - 1][0], span = t1 - t0 || 1;
+    var line = function (k) {
+      var d = '';
+      for (var i = 0; i < series.length; i++) {
+        var x = (series[i][0] - t0) / span * W;
+        var y = (H - 2) - Math.min(1, series[i][k] / max) * (H - 4);
+        d += (i ? 'L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2);
+      }
+      return d;
+    };
+    var area = function (k) { return line(k) + 'L' + W + ' ' + H + 'L0 ' + H + 'Z'; };
+    var tick = function (t) {
+      var d = new Date(t + tz * 3600e3);
+      return span <= 26 * 3600e3 ? pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) : (d.getUTCMonth() + 1) + '/' + d.getUTCDate();
+    };
+    // series tuples are [t, up, down]; "in" is the download side, so it reads index 2
+    return '<div class="td-chart-head">' +
+        '<span class="td-lg"><i class="td-dot in"></i>' + _t('In', '入站') + '</span>' +
+        '<span class="td-lg"><i class="td-dot out"></i>' + _t('Out', '出站') + '</span>' +
+        '<span class="td-chart-max">' + _t('Peak ', '峰值 ') + speed(max) + '</span>' +
+      '</div>' +
+      '<svg class="td-spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="' + _t('Inbound and outbound rate curve', '入站与出站速率曲线') + '">' +
+        '<path class="sp-area in" d="' + area(2) + '"/>' +
+        '<path class="sp-area out" d="' + area(1) + '"/>' +
+        '<path class="sp-line in" d="' + line(2) + '" vector-effect="non-scaling-stroke"/>' +
+        '<path class="sp-line out" d="' + line(1) + '" vector-effect="non-scaling-stroke"/>' +
+        '<line class="sp-base" x1="0" y1="' + (H - 0.5) + '" x2="' + W + '" y2="' + (H - 0.5) + '" vector-effect="non-scaling-stroke"/>' +
+      '</svg>' +
+      '<div class="td-chart-axis"><span>' + tick(t0) + '</span><span>' + tick(t0 + span / 2) + '</span><span>' + tick(t1) + '</span></div>';
+  }
+  function renderTrafficDetail() {
+    var dlg = $('#traffic-modal'), st = S.trafficDetail;
+    if (!dlg || !st) return;
+    var win = st.win, items = trafficDetailRows(), isToday = win === 'today';
+    var sumIn = 0, sumOut = 0, known = 0, max = 0;
+    items.forEach(function (x) {
+      if (x.total == null) return;
+      known++; sumIn += x.t.down; sumOut += x.t.up;
+      if (x.total > max) max = x.total;
+    });
+    var grand = sumIn + sumOut;
+    var dash = '—';
+    var body;
+    if (!items.length) {
+      body = '<p class="td-empty monitor-surface-secondary">' + _t('No nodes match the current filter.', '当前筛选下没有节点。') + '</p>';
+    } else {
+      var rows = items.map(function (x) {
+        var n = x.n, t = x.t, unk = x.total == null;
+        var share = !unk && grand > 0 ? x.total / grand * 100 : 0;
+        var w = !unk && max > 0 ? Math.max(0.8, x.total / max * 100).toFixed(2) : '0';
+        var flag = regionCode(n.region) ? flagImg(n.region) : '';
+        var open = !!(st.open && st.open[n.uuid]);
+        var slot = trafficSlot(n.uuid, win);
+        return '<li class="td-row' + (unk ? ' is-unknown' : '') + (open ? ' is-open' : '') + '">' +
+          '<button type="button" class="td-row-head" data-td-toggle="' + esc(n.uuid) + '" aria-expanded="' + open + '">' +
+            '<span class="td-flag">' + flag + '</span>' +
+            '<span class="td-name" title="' + esc(n.name) + '">' + esc(n.name) + '</span>' +
+            '<span class="td-total">' + (unk ? dash : bytesPrecise(x.total)) + '</span>' +
+            '<span class="td-chev" aria-hidden="true">' + icon('chevron-down') + '</span>' +
+          '</button>' +
+          '<div class="td-bar monitor-rail"><div class="g-blue" style="width:' + w + '%"></div></div>' +
+          '<div class="td-row-meta">' +
+            '<span class="td-in">' + icon('arrow-down') + _t('In', '入站') + ' ' + (unk ? dash : bytesPrecise(t.down)) + '</span>' +
+            '<span class="td-out">' + icon('arrow-up') + _t('Out', '出站') + ' ' + (unk ? dash : bytesPrecise(t.up)) + '</span>' +
+            '<span class="td-share">' + (unk ? '' : (share >= 10 ? share.toFixed(0) : share.toFixed(1)) + '%') + '</span>' +
+          '</div>' +
+          '<div class="td-row-peak">' +
+            '<span class="td-peak-k">' + _t('Peak', '峰值') + '</span>' +
+            '<span class="td-in">' + icon('arrow-down') + _t('In', '入站') + ' ' + (unk || !t.peakDown ? dash : speed(t.peakDown)) + '</span>' +
+            '<span class="td-out">' + icon('arrow-up') + _t('Out', '出站') + ' ' + (unk || !t.peakUp ? dash : speed(t.peakUp)) + '</span>' +
+          '</div>' +
+          (open ? '<div class="td-chart">' + rateChart(slot && slot.series, win) + '</div>' : '') +
+        '</li>';
+      }).join('');
+      body = '<div class="td-summary monitor-surface-secondary">' +
+          '<div class="td-sum"><span class="k">' + _t('Total In', '总入站') + '</span><span class="v">' + (known ? bytesPrecise(sumIn) : dash) + '</span></div>' +
+          '<div class="td-sum"><span class="k">' + _t('Total Out', '总出站') + '</span><span class="v">' + (known ? bytesPrecise(sumOut) : dash) + '</span></div>' +
+          '<div class="td-sum"><span class="k">' + _t('Combined', '合计') + '</span><span class="v">' + (known ? bytesPrecise(grand) : dash) + '</span></div>' +
+        '</div>' +
+        (st.loading ? '<p class="td-note">' + _t('Collecting records…', '正在汇总各节点记录…') + '</p>' : '') +
+        '<ul class="td-list">' + rows + '</ul>';
+    }
+    dlg.innerHTML =
+      '<div class="modal-in">' +
+        '<header class="modal-head monitor-surface-primary">' +
+          '<div class="modal-ident">' +
+            '<div class="modal-os monitor-chip">' + icon(isToday ? 'sun' : 'activity') + '</div>' +
+            '<div style="min-width:0">' +
+              '<div class="modal-title-row"><h2 id="traffic-modal-title">' + _t(isToday ? 'Today Traffic' : 'Cycle Traffic', isToday ? '今日流量明细' : '周期流量明细') + '</h2></div>' +
+              '<p class="modal-sub td-sub">' + trafficDetailSub(items, win) + '</p>' +
+            '</div>' +
+          '</div>' +
+          '<button type="button" data-tclose aria-label="' + _t('Close', '关闭') + '" class="modal-close monitor-control monitor-hover">' + icon('x') + '</button>' +
+        '</header>' +
+        '<div class="modal-body td-body">' + body + '</div>' +
+      '</div>';
   }
 
   // ---------------------------------------------------------------
@@ -891,7 +1211,7 @@
     var T = S.T;
     var nodes = visibleNodes();
     var total = nodes.length, online = 0, cores = 0, cpuSum = 0, cpuN = 0;
-    var memU = 0, memT = 0, diskU = 0, diskT = 0, rx = 0, tx = 0, tin = 0, tout = 0;
+    var memU = 0, memT = 0, diskU = 0, diskT = 0, rx = 0, tx = 0, tin = 0, tout = 0, tinN = 0;
     var base = String(T.baseCurrency || 'USD').toUpperCase(), value = 0;
     nodes.forEach(function (n) {
       var r = rep(n.uuid), on = isOnline(n.uuid);
@@ -903,7 +1223,7 @@
         diskU += num(r.disk && r.disk.used); diskT += num(r.disk && r.disk.total) || num(n.disk_total);
         rx += num(r.network && r.network.down); tx += num(r.network && r.network.up);
       } else { cores += num(n.cpu_cores); memT += num(n.mem_total); diskT += num(n.disk_total); }
-      if (r) { var tr = trafficOf(n); tin += tr.down; tout += tr.up; }
+      if (r) { var tr = trafficOf(n); if (!tr.unknown) tinN++; tin += tr.down; tout += tr.up; }
       if (!matchesList(n, T.costIgnoredNodes)) {
         var b = billing(n);
         if (b.remaining > 0) { var cv = toBase(b.remaining, b.code); value += cv == null ? 0 : cv; }
@@ -917,37 +1237,43 @@
     // asset thresholds are defined in CNY (as in LuminaPlus) and converted to the display currency
     var cny = function (v) { return S.rates.CNY && S.rates[base] ? v * S.rates.CNY / S.rates[base] : v / 7; };
 
-    var panels = [];
-    panels.push(panel(_t('Cluster Status', '集群状态'), '<span class="dot" style="background:' + (online === total && total ? 'var(--emerald-500)' : online ? 'var(--amber-500)' : 'var(--red-500)') + '"></span>',
+    var parts = {};
+    parts.status = panel(_t('Cluster Status', '集群状态'), '<span class="dot" style="background:' + (online === total && total ? 'var(--emerald-500)' : online ? 'var(--amber-500)' : 'var(--red-500)') + '"></span>',
       '<div class="stat-main"><span class="stat-value">' + online + '</span><span class="stat-unit xs">/ ' + total + _t(' Online', ' 在线') + '</span></div>' +
-      '<div class="stat-foot' + healthCls + '">' + icon(health >= 100 ? 'shield-check' : 'triangle-alert') + '<span>' + healthTxt + '</span></div>'));
-    panels.push(panel(_t('Compute Load', '计算负载'), '<span class="meta">' + cores + ' vCPUs</span>',
+      '<div class="stat-foot' + healthCls + '">' + icon(health >= 100 ? 'shield-check' : 'triangle-alert') + '<span>' + healthTxt + '</span></div>');
+    parts.cpu = panel(_t('Compute Load', '计算负载'), '<span class="meta">' + cores + ' vCPUs</span>',
       '<div class="stat-main"><span class="stat-value">' + fmtPct(cpuAvg) + '</span><span class="stat-unit">' + _t('Avg', '平均') + '</span></div>' +
-      '<div class="stat-bar monitor-rail"><div class="g-blue" style="width:' + cpuAvg + '%"></div></div>'));
-    panels.push(panel(_t('Memory', '内存'), '<span class="meta">' + bytesTotal(memT) + '</span>',
+      '<div class="stat-bar monitor-rail"><div class="g-blue" style="width:' + cpuAvg + '%"></div></div>');
+    parts.memory = panel(_t('Memory', '内存'), '<span class="meta">' + bytesTotal(memT) + '</span>',
       '<div class="stat-main"><span class="stat-value">' + fmtPct(pct(memU, memT)) + '</span><span class="stat-unit">' + _t('Allocated', '已用') + '</span></div>' +
-      '<div class="stat-bar monitor-rail"><div class="g-emerald" style="width:' + pct(memU, memT) + '%"></div></div>'));
-    panels.push(panel(_t('Storage', '硬盘'), '<span class="meta">' + bytesTotal(diskT) + '</span>',
+      '<div class="stat-bar monitor-rail"><div class="g-emerald" style="width:' + pct(memU, memT) + '%"></div></div>');
+    parts.disk = panel(_t('Storage', '硬盘'), '<span class="meta">' + bytesTotal(diskT) + '</span>',
       '<div class="stat-main"><span class="stat-value">' + fmtPct(pct(diskU, diskT)) + '</span><span class="stat-unit">' + _t('Filled', '已用') + '</span></div>' +
-      '<div class="stat-bar monitor-rail"><div class="g-amber" style="width:' + pct(diskU, diskT) + '%"></div></div>'));
-    panels.push(panel(_t('Throughput', '实时速率'), '<span class="dot" style="background:var(--blue-500)"></span>',
-      '<div class="transfer-grid"><span class="k rx">' + icon('arrow-down') + ' RX</span><span class="v">' + speed(rx) + '</span>' +
-      '<span class="k tx">' + icon('arrow-up') + ' TX</span><span class="v">' + speed(tx) + '</span></div>' +
-      ratingTag('bandwidth', rx + tx, [1 * MBPS, 10 * MBPS, 100 * MBPS])));
-    panels.push(panel(_t('Cycle Traffic', '周期流量'), '<span class="meta">' + _t('Total', '合计') + '</span>',
-      '<div class="transfer-grid"><span class="k">' + _t('Total In', '总入站') + '</span><span class="v">' + bytesPrecise(tin) + '</span>' +
-      '<span class="k">' + _t('Total Out', '总出站') + '</span><span class="v">' + bytesPrecise(tout) + '</span></div>' +
-      ratingTag('traffic', tin + tout, [500 * GB, 2000 * GB, 10000 * GB])));
+      '<div class="stat-bar monitor-rail"><div class="g-amber" style="width:' + pct(diskU, diskT) + '%"></div></div>');
+    parts.throughput = panel(_t('Throughput', '实时速率'), '<span class="dot" style="background:var(--blue-500)"></span>',
+      '<div class="transfer-grid"><span class="k tx">' + icon('arrow-up') + ' ' + _t('TX', '上行') + '</span><span class="v">' + speed(tx) + '</span>' +
+      '<span class="k rx">' + icon('arrow-down') + ' ' + _t('RX', '下行') + '</span><span class="v">' + speed(rx) + '</span></div>' +
+      ratingTag('bandwidth', rx + tx, [1 * MBPS, 10 * MBPS, 100 * MBPS]));
+    var isToday = currentRange() === 'today';
+    var rangeSwitch = '<span class="range-switch">' +
+      '<button type="button" data-trange="cycle"' + (isToday ? '' : ' class="on"') + '>' + _t('Cycle', '周期') + '</button>' +
+      '<button type="button" data-trange="today"' + (isToday ? ' class="on"' : '') + '>' + _t('Today', '今日') + '</button></span>';
+    parts.traffic = panel(_t(isToday ? 'Today Traffic' : 'Cycle Traffic', isToday ? '今日流量' : '周期流量'), rangeSwitch,
+      '<div class="transfer-grid"><span class="k">' + _t('Total In', '总入站') + '</span><span class="v">' + (tinN ? bytesPrecise(tin) : '—') + '</span>' +
+      '<span class="k">' + _t('Total Out', '总出站') + '</span><span class="v">' + (tinN ? bytesPrecise(tout) : '—') + '</span></div>' +
+      (isToday ? '' : ratingTag('traffic', tin + tout, [500 * GB, 2000 * GB, 10000 * GB])),
+      ' data-traffic-detail role="button" tabindex="0"');
     if (T.showRemainingValue && canSeeCosts()) {
-      panels.push('<div class="public-stat-panel remaining-value-card monitor-surface-primary"><div class="remaining-label">' + _t('Remaining Value', '剩余价值') + '</div>' +
+      parts.asset = '<div class="public-stat-panel remaining-value-card monitor-surface-primary"><div class="remaining-label">' + _t('Remaining Value', '剩余价值') + '</div>' +
         '<div class="stat-value" style="margin-top:8px">' + (SYMBOL[base] || '') + value.toFixed(2) + '</div>' +
         '<span class="remaining-cur" role="status" title="' + _t('Estimated remaining service value in ' + esc(base) + (S.ratesLive ? ' (live rates).' : ' (approximate rates).'), '按' + (S.ratesLive ? '实时' : '近似') + '汇率折算的剩余服务价值（' + esc(base) + '）') + '">' + esc(base) + '</span>' +
-        ratingTag('asset', value, [cny(500), cny(1500), cny(3000)]) + '</div>');
+        ratingTag('asset', value, [cny(500), cny(1500), cny(3000)]) + '</div>';
     }
-    setHTML(box, panels.join(''));
+    // render in the visitor's order; hidden panels are simply not emitted, so the grid reflows
+    setHTML(box, visiblePanels(T).map(function (k) { return parts[k] || ''; }).join(''));
   }
-  function panel(title, meta, body) {
-    return '<div class="public-stat-panel monitor-surface-primary monitor-hover"><div class="stat-heading"><span class="title">' + esc(title) + '</span>' + meta + '</div>' + body + '</div>';
+  function panel(title, meta, body, attrs) {
+    return '<div class="public-stat-panel monitor-surface-primary monitor-hover"' + (attrs || '') + '><div class="stat-heading"><span class="title">' + esc(title) + '</span>' + meta + '</div>' + body + '</div>';
   }
 
   // ---------------------------------------------------------------
@@ -1185,10 +1511,11 @@
 
   function resetTitle(tr) {
     var parts = [];
-    parts.push(tr.engine ? _t('Traffic counted by the theme for the current cycle', '本周期流量由主题统计') : _t('Traffic = Komari agent counter', '流量 = Komari 探针计数'));
-    if (tr.cyc) { var d = cycleYMD(tr.cyc); parts.push(_t('Next reset ' + d + ' (day ' + tr.cyc.day + ', ' + (tr.cyc.daysLeft === 0 ? 'today' : 'in ' + tr.cyc.daysLeft + ' days') + ')', '下次重置 ' + d + '（每月 ' + tr.cyc.day + ' 日，' + (tr.cyc.daysLeft === 0 ? '今天' : tr.cyc.daysLeft + ' 天后') + '）') + ' · ' + tzLabel(tr.cyc.tz)); }
+    if (tr.today) parts.push(_t('Today so far, from 00:00 ' + tzLabel(tr.cyc ? tr.cyc.tz : 0), '今日累计（自 0 点起，' + tzLabel(tr.cyc ? tr.cyc.tz : 0) + '）'));
+    else parts.push(tr.engine ? _t('Traffic counted by the theme for the current cycle', '本周期流量由主题统计') : _t('Traffic = Komari agent counter', '流量 = Komari 探针计数'));
+    if (tr.cyc && !tr.today) { var d = cycleYMD(tr.cyc); parts.push(_t('Next reset ' + d + ' (day ' + tr.cyc.day + ', ' + (tr.cyc.daysLeft === 0 ? 'today' : 'in ' + tr.cyc.daysLeft + ' days') + ')', '下次重置 ' + d + '（每月 ' + tr.cyc.day + ' 日，' + (tr.cyc.daysLeft === 0 ? '今天' : tr.cyc.daysLeft + ' 天后') + '）') + ' · ' + tzLabel(tr.cyc.tz)); }
     if (tr.calib) parts.push(_t('Calibrated ', '校准于 ') + dateTime(new Date(tr.calib.t)) + (tr.calib.auto ? _t(' (auto checkpoint)', '（自动存档）') : ''));
-    if (tr.approx) parts.push(_t('Approximate: record history does not cover the whole cycle', '近似值：记录未覆盖整个周期'));
+    if (tr.approx) parts.push(tr.today ? _t('Approximate: record history does not reach back to midnight', '近似值：记录未覆盖到今日 0 点') : _t('Approximate: record history does not cover the whole cycle', '近似值：记录未覆盖整个周期'));
     return parts.join(' · ');
   }
   // red "Offline · 3h" pill shown in place of the alert bell / uptime chip
@@ -1203,24 +1530,35 @@
   }
   function cardHTML(n) {
     var T = S.T, V = nodeView(n), net = V.net, region = n.region || '';
-    var tr = trafficOf(n), limit = num(n.traffic_limit), ax = tr.approx || tr.pending ? '≈ ' : '';
-    var trafficTitle = _t('Cycle I/O', '周期流量'), quota = '';
-    var billType = limit > 0 ? String(n.traffic_limit_type || 'max').toLowerCase() : 'sum';
+    var tr = trafficOf(n), limit = num(n.traffic_limit);
+    var ax = tr.unknown ? '' : (tr.approx || tr.pending ? '≈ ' : '');
+    var isToday = !!tr.today;
+    var trafficTitle = isToday ? _t('Today', '今日流量') : _t('Cycle I/O', '周期流量'), quota = '';
+    // today is shown as in + out: a billing rule such as "max of in/out" only exists for metered cycles
+    var billType = isToday ? 'sum' : (limit > 0 ? String(n.traffic_limit_type || 'max').toLowerCase() : 'sum');
     var usedBytes = trafficUsedBy(billType, tr);
-    var trafficRight = '<span class="r used" title="' + esc(billTitle(billType) + ' · ' + resetTitle(tr)) + '"><em>' + BILL_LABEL[billType][0] + '</em>' + ax + bytesPrecise(usedBytes) + '</span>';
-    if (limit > 0) {
+    var usedTxt = tr.unknown ? '—' : ax + bytesPrecise(usedBytes);
+    var trafficRight = '<span class="r used" title="' + esc((isToday ? '' : billTitle(billType) + ' · ') + resetTitle(tr)) + '">' +
+      (isToday ? '' : '<em>' + BILL_LABEL[billType][0] + '</em>') + usedTxt + '</span>';
+    if (!isToday && limit > 0) {
       var usedPct = pct(usedBytes, limit), rawPct = usedBytes / limit * 100;
       var pctTxt = (rawPct >= 10 || rawPct === 0 ? Math.round(rawPct) : rawPct.toFixed(1)) + _t('% of ', '% / ') + bytesTotal(limit);
       quota = '<div class="quota" title="' + esc(bytesPrecise(usedBytes) + ' / ' + bytesTotal(limit) + ' · ' + billTitle(billType)) + '">' +
         '<div class="bar"><div class="' + (rawPct >= 90 ? 'g-red' : rawPct >= 70 ? 'g-amber' : 'g-blue') + '" style="width:' + usedPct + '%"></div></div>' +
         '<span class="quota-pct' + (rawPct >= 90 ? ' hot' : rawPct >= 70 ? ' warm' : '') + '">' + pctTxt + '</span></div>';
-    } else {
+    } else if (!isToday) {
       // unmetered: a full, softly striped bar and "used / ∞" (desktop only, see .quota-inf in app.css)
       quota = '<div class="quota quota-inf" title="' + esc(_t('Unmetered traffic', '不限流量') + ' · ' + bytesPrecise(usedBytes)) + '">' +
         '<div class="bar"><div class="g-inf" style="width:100%"></div></div>' +
         '<span class="quota-pct">' + bytesPrecise(usedBytes) + ' / ∞</span></div>';
     }
-    var resetChip = T.showResetCountdown && tr.cyc ? '<span class="chip" title="' + esc(resetTitle(tr)) + '">' + icon('rotate-ccw') + (tr.cyc.daysLeft === 0 ? _t('Today', '今天') : tr.cyc.daysLeft + 'd') + '</span>' : '';
+    var resetChip = '';
+    if (T.showResetCountdown && tr.cyc) {
+      var leftTxt = tr.today
+        ? Math.max(0, Math.ceil((tr.cyc.next - Date.now()) / 3600e3)) + 'h'
+        : (tr.cyc.daysLeft === 0 ? _t('Today', '今天') : tr.cyc.daysLeft + 'd');
+      resetChip = '<span class="chip" title="' + esc(resetTitle(tr)) + '">' + icon('rotate-ccw') + leftTxt + '</span>';
+    }
     var h = '<div><div class="node-head monitor-divider"><div class="node-head-row"><div class="node-ident">' +
       '<div class="node-os monitor-chip">' + osIcon(n.os) + '</div>' +
       '<h3 class="node-title"><span class="node-status-dot" aria-hidden="true"></span><span class="node-name">' + esc(n.name) + '</span>' +
@@ -1242,7 +1580,7 @@
         '<div class="nb-top"><span class="nb-k">' + icon(up ? 'arrow-up' : 'arrow-down') + (up ? _t('Upload', '上行') : _t('Download', '下行')) + '</span>' +
           '<span class="nb-v">' + p[0] + '<small>' + p[1] + '</small></span></div>' +
         '<div class="nb-trail">' + sparkline(up ? hist.up : hist.down, up ? 'tx' : 'rx') + '<span class="nb-live">' + _t('live', '实时') + '</span></div>' +
-        '<div class="nb-total"><span class="nb-k">' + icon('globe') + (up ? _t('Out', '出站') : _t('In', '入站')) + '</span><b>' + ax + bytesPrecise(up ? tr.up : tr.down) + '</b></div>' +
+        '<div class="nb-total"><span class="nb-k">' + icon('globe') + (up ? _t('Out', '出站') : _t('In', '入站')) + '</span><b>' + (tr.unknown ? '—' : ax + bytesPrecise(up ? tr.up : tr.down)) + '</b></div>' +
       '</div>';
     };
     var minis = [
@@ -1269,7 +1607,15 @@
       compactProbes(n) +
       '<div class="cm-net"><div class="cm-line"><span class="rx">' + icon('arrow-down') + speed(net.down) + '</span><span class="tx">' + icon('arrow-up') + speed(net.up) + '</span></div>' +
       (T.compactShowTrafficTotal ? '<div class="cm-line">' : '') +
-      (T.compactShowTrafficTotal ? (function () { var tr = trafficOf(n), lim = num(n.traffic_limit); var bt = lim > 0 ? String(n.traffic_limit_type || 'max').toLowerCase() : 'sum'; return '<span class="muted" title="' + esc(resetTitle(tr)) + '">' + (BILL_LABEL[bt] ? BILL_LABEL[bt][0] : 'MAX') + ' ' + (tr.approx || tr.pending ? '≈' : '') + bytesPrecise(trafficUsedBy(bt, tr)) + (lim > 0 ? ' / ' + bytesTotal(lim) + ' · ' + Math.round(pct(trafficUsedBy(bt, tr), lim)) + '%' : '') + (T.showResetCountdown && tr.cyc ? ' · ↻' + tr.cyc.daysLeft + 'd' : '') + '</span>'; })() : '') +
+      (T.compactShowTrafficTotal ? (function () {
+        var tr = trafficOf(n), lim = num(n.traffic_limit), td = !!tr.today;
+        var bt = td ? 'sum' : (lim > 0 ? String(n.traffic_limit_type || 'max').toLowerCase() : 'sum');
+        var used = trafficUsedBy(bt, tr);
+        var txt = td ? _t('Today', '今日') + ' ' : (BILL_LABEL[bt] ? BILL_LABEL[bt][0] : 'MAX') + ' ';
+        txt += tr.unknown ? '—' : (tr.approx || tr.pending ? '≈' : '') + bytesPrecise(used) + (!td && lim > 0 ? ' / ' + bytesTotal(lim) + ' · ' + Math.round(pct(used, lim)) + '%' : '');
+        if (T.showResetCountdown && tr.cyc) txt += ' · ↻' + (td ? Math.max(0, Math.ceil((tr.cyc.next - Date.now()) / 3600e3)) + 'h' : tr.cyc.daysLeft + 'd');
+        return '<span class="muted" title="' + esc(resetTitle(tr)) + '">' + txt + '</span>';
+      })() : '') +
       (T.compactShowTrafficTotal ? '</div>' : '') + '</div></div>';
     return h + footerHTML(n, { noTags: true, noBilling: !T.compactShowBilling });
   }
@@ -1446,7 +1792,7 @@
   function loadRates() {
     var url = safeUrl(S.T.costRateApiUrl);
     if (!url || !canSeeCosts()) return Promise.resolve();
-    var key = 'komari-horizon-rates:' + url;
+    var key = 'komari-horizon-for-pter-rates:' + url;
     try {
       var c = JSON.parse(lsGet(key, 'null'));
       if (c && Date.now() - c.at < 12 * 3600e3) { applyRates(c.rates); return Promise.resolve(); }
@@ -1579,7 +1925,7 @@
     var body = m.loading && !recs.length ? '<div class="chart-empty">' + _t('Loading telemetry…', '正在加载数据…') + '</div>' : !recs.length ? '<div class="chart-empty">' + _t('No history recorded for this range', '该时间范围内没有记录') + '</div>' : null;
     var idx = m.hover == null ? recs.length - 1 : m.hover;
     var readout = recs.length ? readoutText(def, recs[idx], m.metric) : '—';
-    box.innerHTML = top + '<div class="chart-block"><div class="chart-top"><span class="t">' + icon('zap') + esc(def.title) + _t(' Performance Horizon', ' 历史走势') + '</span>' +
+    box.innerHTML = top + '<div class="chart-block"><div class="chart-top"><span class="t">' + icon('zap') + esc(def.title) + _t(' Performance', ' 历史走势') + '</span>' +
       '<output class="chart-readout" id="hist-out">' + esc(readout) + '</output></div>' +
       '<div class="history-chart-viewport monitor-surface-tertiary" id="hist-vp">' + (body || '') + '</div>' +
       '<div class="chart-foot"><span>' + (recs.length ? axisTime(recs[0].t, m.range) : '') + '</span><span>' + _t('Interactive Telemetry · ', '交互图表 · ') + (m.range > 1 ? _t('Averaged buckets · ', '分段平均 · ') : '') + _t('Hover or use arrow keys', '悬停或使用方向键查看') + '</span><span>' + (recs.length ? axisTime(recs[recs.length - 1].t, m.range) : '') + '</span></div>' +
@@ -1872,7 +2218,7 @@
     }
     var sc = document.createElement('script');
     sc.src = '/assets/manage.js?v=1.10.0';
-    sc.onload = function () { window.KHorizonManage(page, KC); };
+    sc.onload = function () { window.KHorizonForPTerManage(page, KC); };
     sc.onerror = function () { page.innerHTML = '<div class="container"><div class="banner monitor-surface-primary">' + _t('Could not load manage.js', '无法加载 manage.js') + '</div></div>'; };
     document.head.appendChild(sc);
   }
@@ -1881,13 +2227,14 @@
   var KC = {
     S: S, api: api, esc: esc, icon: icon, DEFAULTS: DEFAULTS, normalizeSettings: normalizeSettings, RATING_PRESETS: RATING_PRESETS,
     SORT_FIELDS: SORT_FIELDS, SORT_NATURAL: SORT_NATURAL, regionLabel: regionLabel, flagImg: flagImg, tasksFor: tasksFor, toList: toList,
+    PANEL_KEYS: PANEL_KEYS, panelOrderAll: panelOrderAll, panelOrder: panelOrder,
     applyPreview: function (T) { S.T = T; applyBackground(); startAmbient(); },
     // traffic helpers for the settings page (evaluate with a draft settings object)
-    trafficWith: function (T, n) { var keep = S.T; S.T = T; try { return trafficOf(n); } finally { S.T = keep; } },
+    trafficWith: function (T, n) { var keep = S.T; S.T = T; try { return trafficOf(n, 'cycle'); } finally { S.T = keep; } },
     resetDayWith: function (T, n) { var keep = S.T; S.T = T; try { return resetDayFor(n); } finally { S.T = keep; } },
     cycleWith: function (T, n) { var keep = S.T; S.T = T; try { return cycleBounds(resetDayFor(n), Date.now(), tzFor(n)); } finally { S.T = keep; } },
     tzLabel: tzLabel, cycleYMD: cycleYMD,
-    loadTrafficWith: function (T, n) { var keep = S.T; S.T = T; var p = loadTrafficFor(n, true); S.T = keep; return p; },
+    loadTrafficWith: function (T, n) { var keep = S.T; S.T = T; var p = loadTrafficFor(n, true, 'cycle'); S.T = keep; return p; },
     liveTotals: function (uuid) { var r = rep(uuid); return r && r.network ? { up: num(r.network.totalUp), down: num(r.network.totalDown) } : null; },
     bytesPrecise: bytesPrecise, dateYMD: dateYMD, dateTime: dateTime,
     // language + fonts
@@ -1922,8 +2269,8 @@
       applyFonts(S.T, true); applyFavicon(S.T, true);
       if (S.settings.private_site && !S.me.logged_in) { privateNotice(); return; }
       S.scheme = lsGet(SCHEME_KEY, '') || S.T.defaultAppearance;
-      S.view = lsGet('komari-horizon-view-' + (isMobile() ? 'm' : 'd'), '') || (isMobile() ? S.T.mobileView : S.T.desktopView);
-      var savedSort = lsGet('komari-horizon-sort', '').split(':');
+      S.view = lsGet('komari-horizon-for-pter-view-' + (isMobile() ? 'm' : 'd'), '') || (isMobile() ? S.T.mobileView : S.T.desktopView);
+      var savedSort = lsGet('komari-horizon-for-pter-sort', '').split(':');
       S.sort = S.T.enableHomeSort && savedSort[0] ? { field: savedSort[0], dir: savedSort[1] === 'desc' ? 'desc' : 'asc' } : { field: S.T.homeSortField, dir: S.T.homeSortDirection };
       shell();
       bindEvents();

@@ -1,5 +1,9 @@
 name: Deploy to Korea VPS
 
+# Optional: pushes the gh-pages demo to a personal VPS. This repository is a fork, so those
+# secrets normally do not exist — the job then skips itself instead of failing on every demo
+# build. Add VPS_HOST / VPS_USER / VPS_SSH_KEY / VPS_KNOWN_HOSTS (and optional VPS_PORT) to
+# enable it.
 on:
   push:
     branches:
@@ -20,18 +24,41 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Check configuration
+        id: cfg
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          [ -n "$VPS_HOST" ] || missing="$missing VPS_HOST"
+          [ -n "$VPS_USER" ] || missing="$missing VPS_USER"
+          [ -n "$VPS_SSH_KEY" ] || missing="$missing VPS_SSH_KEY"
+          [ -n "$VPS_KNOWN_HOSTS" ] || missing="$missing VPS_KNOWN_HOSTS"
+          if [ -n "$missing" ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            echo "::notice::VPS deploy is not configured (missing:$missing) — skipping. See the header of .github/workflows/deploy-korea.yml."
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout published website
+        if: steps.cfg.outputs.skip != '1'
         uses: actions/checkout@v4
         with:
           ref: gh-pages
           persist-credentials: false
 
       - name: Install deployment tools
+        if: steps.cfg.outputs.skip != '1'
         run: |
           sudo apt-get update
           sudo apt-get install -y rsync openssh-client
 
       - name: Configure SSH
+        if: steps.cfg.outputs.skip != '1'
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
@@ -62,6 +89,7 @@ jobs:
           echo "SSH configuration completed"
 
       - name: Test SSH connection
+        if: steps.cfg.outputs.skip != '1'
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -96,6 +124,7 @@ jobs:
           echo "SSH connection successful"
 
       - name: Verify website files
+        if: steps.cfg.outputs.skip != '1'
         run: |
           set -euo pipefail
 
@@ -107,6 +136,7 @@ jobs:
           echo "Website files verified"
 
       - name: Deploy website to Korea VPS
+        if: steps.cfg.outputs.skip != '1'
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -129,6 +159,7 @@ jobs:
           echo "Website deployment completed"
 
       - name: Verify deployment
+        if: steps.cfg.outputs.skip != '1'
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -150,12 +181,12 @@ jobs:
           echo "Deployment verification successful"
 
       - name: Deployment summary
-        if: success()
+        if: steps.cfg.outputs.skip != '1' && success()
         run: |
           echo "## Deployment Successful" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- Server: KR-CHUNCHEON-FREE" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Website: https://demos.dowsion.com" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Website: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" >> "$GITHUB_STEP_SUMMARY"
           echo "- Directory: /var/www/demo" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source: gh-pages" >> "$GITHUB_STEP_SUMMARY"
           echo "- Status: Success" >> "$GITHUB_STEP_SUMMARY"

@@ -2,22 +2,24 @@
 """Build the static demo site (GitHub Pages) from dist/ + demo/demo.js.
 
 The theme files are copied unchanged except for root-absolute paths, which become
-relative so the site also works under a sub-path such as /Komari-Theme-Horizon/.
+relative so the site also works under a sub-path such as /Komari-Theme-Horizon-For-PTer/.
 Usage: python3 tools/build-demo.py [out_dir]   (default: _site)
 """
-import json, pathlib, shutil, sys
+import json, os, pathlib, shutil, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / '_site').resolve()
-REPO = 'https://github.com/Dowsion-dev/Komari-Theme-Horizon'
+# the demo has no real admin panel, so the header's admin entry links to the repository instead.
+# On a fork CI passes REPO_URL so the demo points at that fork, not at upstream.
+REPO = os.environ.get('REPO_URL') or 'https://github.com/Dowsion-dev/Komari-Theme-Horizon-For-PTer'
 VERSION = json.loads((ROOT / 'komari-theme.json').read_text(encoding='utf-8'))['version']
 
 REWRITES = {
     'index.html': [
         ('href="/favicon.svg"', 'href="favicon.svg"'),
         ('"/assets/', '"assets/'),
-        ('<title>Komari Monitor</title>', '<title>Horizon · Komari 主题演示</title>'),
-        ('A simple server monitor tool.', 'Horizon — 高密度控制台风格的 Komari Monitor 主题（演示站，数据为模拟）'),
+        ('<title>Komari Monitor</title>', '<title>Komari-Theme-Horizon-For-PTer · Komari 主题演示</title>'),
+        ('A simple server monitor tool.', 'Komari-Theme-Horizon-For-PTer — 高密度控制台风格的 Komari Monitor 主题（演示站，数据为模拟）'),
     ],
     'assets/app.js': [
         ("src=\"/flags/", "src=\"flags/"),
@@ -65,7 +67,7 @@ def main():
     cname = ROOT / 'demo' / 'CNAME'
     if cname.exists() and cname.read_text().strip():
         (OUT / 'CNAME').write_text(cname.read_text().strip() + '\n')
-    print(f'demo site → {OUT} (Horizon v{VERSION})')
+    print(f'demo site → {OUT} (Komari-Theme-Horizon-For-PTer v{VERSION})')
 
 
 if __name__ == '__main__':

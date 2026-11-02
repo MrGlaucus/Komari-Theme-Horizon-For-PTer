@@ -1,6 +1,6 @@
 /* fonts are loaded by index.html / app.js according to the theme settings (see fontPlan in app.js) */
 /* ------------------------------------------------------------------
-   Horizon — Komari Monitor theme · design tokens
+   Komari-Theme-Horizon-For-PTer — Komari Monitor theme · design tokens
    ------------------------------------------------------------------ */
 :root {
   --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
@@ -236,7 +236,8 @@ h1, h2, h3, p { font-size: inherit; font-weight: inherit; }
 .control-room { min-width: 128px; justify-content: center; }
 @media (min-width: 1024px) { .color-scheme-toggle button { min-width: 80px; } }
 .control-room svg { width: 12px; height: 12px; transition: transform .15s; }
-.control-room:hover svg { transform: translateX(2px); }
+/* the gear is a settings marker, not a "go" arrow: no slide on hover */
+.control-room:hover svg { transform: none; }
 
 /* ------------------------------------------------------------------
    Page background
@@ -688,6 +689,9 @@ select.m-input { cursor: pointer; }
 .m-icon:disabled { opacity: .35; cursor: default; }
 .m-icon svg { width: 14px; height: 14px; }
 .m-icon-ph { width: 30px; flex-shrink: 0; }
+/* overview card list: a bare switch inside an .m-order row, and a dimmed list when the overview is off */
+.m-order .m-sw { min-height: 0; padding: 0; border: 0; background: none; gap: 0; }
+.m-order.is-off { opacity: .45; pointer-events: none; }
 .m-empty { border-radius: 10px; border: 1px dashed var(--monitor-border); padding: 14px; text-align: center; font-size: 12px; color: var(--monitor-muted); }
 .m-btn { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; border-radius: 8px; border: 1px solid var(--monitor-border); background: var(--monitor-surface-1); padding: 6px 12px; font-size: 12.5px; font-weight: 500; color: var(--t-soft); white-space: nowrap; }
 .m-btn:hover:not(:disabled) { color: var(--t-strong); border-color: var(--monitor-border-hover); }
@@ -935,3 +939,94 @@ html, body { overflow-anchor: none; }
 .node-offline-badge svg { width: 12px; height: 12px; }
 .node-offline-badge i { font-style: normal; font-weight: 500; letter-spacing: 0; text-transform: none; opacity: .8; }
 .node-offline-badge i::before { content: "·"; margin-right: 5px; }
+
+/* traffic card range switch — cycle / today, driven by currentRange() in app.js.
+   Sits where the old "TOTAL" label used to be, so the panel heading keeps its height. */
+.stat-heading .range-switch { display: inline-flex; flex-shrink: 0; align-items: center; gap: 1px; border-radius: 9999px; border: 1px solid var(--monitor-border-nested); padding: 1px; background-color: var(--monitor-control); }
+.stat-heading .range-switch button { appearance: none; border: 0; border-radius: 9999px; background: transparent; color: var(--monitor-muted); font-family: inherit; font-size: 10px; line-height: 14px; letter-spacing: .02em; padding: 0 6px; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+.stat-heading .range-switch button.on { background-color: var(--monitor-selected); color: var(--n900); }
+.stat-heading .range-switch button:focus-visible { outline: 2px solid var(--monitor-border-hover); outline-offset: 1px; }
+@media (max-width: 420px) { .stat-heading .range-switch button { padding: 0 4px; } }
+
+/* header on phones: the brand keeps its own line and every control sits on the next one.
+   The scheme and language groups collapse to their active button only — a tap then advances
+   to the next mode (isNarrowHeader in app.js), so the group still works with one icon.
+   Desktop and tablet (>=768px) are untouched. */
+.control-room .cr-icon { display: block; }
+@media (max-width: 767px) {
+  .header-actions { flex-wrap: nowrap; gap: 8px; }
+  .connection { width: 36px; padding: 0; justify-content: center; }
+  .connection .label, .connection .sep, .connection .clock { display: none; }
+  .color-scheme-toggle button:not([aria-pressed="true"]),
+  .lang-toggle button:not([aria-pressed="true"]) { display: none; }
+  /* with only one button left, the "selected" fill would read as a state you could toggle off */
+  .color-scheme-toggle button[aria-pressed="true"],
+  .lang-toggle button[aria-pressed="true"] { background-color: transparent; box-shadow: none; }
+  .control-room { width: 36px; min-width: 0; padding: 0; gap: 0; justify-content: center; }
+  .control-room .cr-label, .control-room .cr-arrow { display: none; }
+  .control-room .cr-icon { display: block; width: 14px; height: 14px; }
+}
+
+/* ---------------------------------------------------------------
+   traffic detail dialog
+   --------------------------------------------------------------- */
+.traffic-detail-modal { max-width: 46rem; }
+[data-traffic-detail] { cursor: pointer; }
+[data-traffic-detail]:hover { border-color: var(--monitor-border-hover); background-color: color-mix(in srgb, var(--blue-500) 5%, transparent); }
+[data-traffic-detail]:focus-visible { outline: 2px solid var(--blue-500); outline-offset: 2px; }
+.td-sub > span { white-space: nowrap; }
+.td-sub .td-sep { margin-left: 4px; }
+.td-body { gap: 16px; }
+.td-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; border-radius: 10px; border-width: 1px; border-style: solid; }
+.td-sum { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; }
+.td-sum + .td-sum { border-left-width: 1px; border-left-style: solid; border-color: var(--monitor-border-nested); }
+.td-sum .k { font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--monitor-muted); }
+.td-sum .v { font-family: var(--font-mono); font-size: 15px; line-height: 20px; font-weight: 600; color: var(--t-strong); font-variant-numeric: tabular-nums; }
+.td-note { margin: 0; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--monitor-muted); }
+.td-empty { margin: 0; border-radius: 10px; border-width: 1px; border-style: solid; padding: 24px 16px; text-align: center; font-size: 13px; line-height: 18px; color: var(--monitor-muted); }
+.td-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.td-row { padding: 10px 2px 11px; border-bottom-width: 1px; border-bottom-style: solid; border-color: var(--monitor-border-nested); }
+.td-row:last-child { border-bottom-width: 0; }
+.td-row-head { display: flex; width: 100%; min-width: 0; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.td-row-head:focus-visible { outline: 2px solid var(--blue-500); outline-offset: 3px; border-radius: 6px; }
+.td-chev { display: flex; flex: none; width: 16px; height: 16px; align-items: center; justify-content: center; color: var(--monitor-muted); transition: transform .18s, color .15s; }
+.td-chev svg { width: 14px; height: 14px; }
+.td-row-head:hover .td-chev { color: var(--t-body); }
+.td-row.is-open .td-chev { transform: rotate(180deg); color: var(--t-body); }
+.td-flag { display: flex; flex: none; }
+.td-flag:empty { display: none; }
+.td-flag .region-flag { width: 16px; height: 12px; }
+.td-name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--t-strong); }
+.td-total { flex: none; font-family: var(--font-mono); font-size: 13px; line-height: 18px; font-weight: 600; color: var(--t-strong); font-variant-numeric: tabular-nums; }
+.td-bar { height: 5px; margin: 7px 0 6px; overflow: hidden; border-radius: 9999px; }
+.td-bar .g-blue { height: 100%; border-radius: 9999px; }
+.td-row-meta { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--monitor-muted); font-variant-numeric: tabular-nums; }
+.td-row-meta svg, .td-row-peak svg { width: 11px; height: 11px; margin-right: 3px; vertical-align: -2px; }
+.td-in svg { color: var(--blue-500); }
+.td-out svg { color: var(--emerald-500); }
+.td-share { margin-left: auto; color: var(--t-body); }
+.td-row-peak { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 4px; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--monitor-muted); font-variant-numeric: tabular-nums; }
+.td-peak-k { font-family: inherit; letter-spacing: .04em; text-transform: uppercase; opacity: .8; }
+.td-row.is-unknown .td-name, .td-row.is-unknown .td-total { color: var(--monitor-muted); }
+/* expanded rate curve */
+.td-chart { margin-top: 10px; padding-top: 8px; border-top-width: 1px; border-top-style: dashed; border-top-color: var(--monitor-border-nested); }
+.td-chart-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; font-family: var(--font-mono); font-size: 10px; line-height: 13px; color: var(--monitor-muted); }
+.td-lg { display: inline-flex; align-items: center; gap: 5px; }
+.td-dot { width: 7px; height: 7px; border-radius: 9999px; }
+.td-dot.in { background-color: var(--blue-500); }
+.td-dot.out { background-color: var(--emerald-500); }
+.td-chart-max { margin-left: auto; color: var(--t-body); }
+.td-spark { display: block; width: 100%; height: 52px; }
+.td-spark .sp-line { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.td-spark .sp-line.in { stroke: var(--blue-500); }
+.td-spark .sp-line.out { stroke: var(--emerald-500); }
+.td-spark .sp-area.in { fill: color-mix(in srgb, var(--blue-500) 10%, transparent); }
+.td-spark .sp-area.out { fill: color-mix(in srgb, var(--emerald-500) 8%, transparent); }
+.td-spark .sp-base { stroke: var(--monitor-border-nested); stroke-width: 1; }
+.td-chart-axis { display: flex; justify-content: space-between; margin-top: 4px; font-family: var(--font-mono); font-size: 10px; line-height: 12px; color: var(--monitor-muted); font-variant-numeric: tabular-nums; }
+.td-chart-empty { margin: 0; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--monitor-muted); }
+@media (max-width: 480px) {
+  .td-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .td-sum:last-child { grid-column: 1 / -1; border-left-width: 0; border-top-width: 1px; border-top-style: solid; border-top-color: var(--monitor-border-nested); }
+  .td-row-meta { gap: 10px; }
+}

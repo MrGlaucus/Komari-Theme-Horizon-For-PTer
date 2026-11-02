@@ -1,6 +1,8 @@
 // Minimal mock of Komari's public API for local theme testing (no deps).
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
-const DIST = process.argv[2];
+// resolve once so later path comparisons use one canonical form (fixes Windows drive paths
+// passed with forward slashes, e.g. from Git Bash: "F:/proj/dist" vs "F:\proj\dist\assets\...")
+const DIST = path.resolve(process.argv[2] || 'dist');
 const PORT = Number(process.argv[3] || 8787);
 const GB = 1024 ** 3, MB = 1024 ** 2, TB = 1024 ** 4;
 
@@ -68,7 +70,7 @@ const server = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   const p = u.pathname, q = u.searchParams;
   const json = (s) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(s); };
-  if (p === '/api/public') return json(ok({ sitename: 'Horizon', description: 'demo', private_site: false, theme: 'horizon', theme_settings: themeSettings, record_preserve_time: RET_DAYS * 24 }));
+  if (p === '/api/public') return json(ok({ sitename: 'Komari-Theme-Horizon-For-PTer', description: 'demo', private_site: false, theme: 'horizon-for-pter', theme_settings: themeSettings, record_preserve_time: RET_DAYS * 24 }));
   if (p === '/api/me') return json(JSON.stringify(process.env.ADMIN ? { username: 'admin', logged_in: true } : { username: 'Guest', logged_in: false }));
   if (p === '/api/admin/theme/settings' && req.method === 'POST') {
     let body = ''; req.on('data', c => body += c); req.on('end', () => { try { themeSettings = JSON.parse(body); json(ok(null)); } catch (e) { res.writeHead(400); res.end(JSON.stringify({ status: 'error', message: 'bad json' })); } });
@@ -101,8 +103,8 @@ const server = http.createServer((req, res) => {
   }
   if (p === '/api/clients') { res.writeHead(400); return res.end('ws only'); }
   // static
-  let f = path.join(DIST, decodeURIComponent(p));
-  if (!f.startsWith(DIST) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) f = path.join(DIST, 'index.html');
+  let f = path.resolve(DIST, decodeURIComponent(p).replace(/^[\\/]+/, ''));
+  if (!f.startsWith(DIST + path.sep) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) f = path.join(DIST, 'index.html');
   res.writeHead(200, { 'content-type': mime[path.extname(f)] || 'application/octet-stream' });
   fs.createReadStream(f).pipe(res);
 });

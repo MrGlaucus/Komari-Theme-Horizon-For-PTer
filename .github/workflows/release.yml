@@ -2,12 +2,24 @@ name: Release
 
 # A release is published whenever main carries a komari-theme.json version that has no release yet
 # (bump with tools/bump.py, add a CHANGELOG section, push). Pushing a v* tag yourself also works.
+#
+# Fork notes:
+#   * Actions must be enabled once in Settings -> Actions (forks start disabled).
+#   * Settings -> Actions -> General -> Workflow permissions must be "Read and write",
+#     otherwise the GITHUB_TOKEN cannot create the release and this job fails at the last step.
+#   * Pushing only dist/ changes does NOT release: the version in komari-theme.json has to change,
+#     so run tools/bump.py first.
 on:
   push:
     branches: [main]
     paths: ['komari-theme.json', '.github/workflows/release.yml']
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild and re-upload even if this version already has a release
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -28,18 +40,33 @@ jobs:
         id: v
         env:
           GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || 'false' }}
         run: |
+          set -euo pipefail
           VERSION=$(python3 -c "import json;print(json.load(open('komari-theme.json'))['version'])")
           TAG="v$VERSION"
           if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "$TAG" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match komari-theme.json version $VERSION (run tools/bump.py first)"; exit 1
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match komari-theme.json version $VERSION (run tools/bump.py first)"
+            exit 1
           fi
-          grep -q "?v=$VERSION\"" dist/index.html || { echo "::error::dist/index.html asset ?v= is not $VERSION (run tools/bump.py)"; exit 1; }
-          if gh release view "$TAG" >/dev/null 2>&1 && [ "${GITHUB_REF_TYPE}" != "tag" ]; then
-            echo "Release $TAG already exists — nothing to do."; echo "skip=true" >> "$GITHUB_OUTPUT"
+          if ! grep -q "?v=$VERSION\"" dist/index.html; then
+            echo "::error::dist/index.html asset ?v= is not $VERSION (run tools/bump.py)"
+            exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # a manual run with force always rebuilds, so an existing asset can be replaced
+          if [ "$FORCE" = "true" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Force rebuild requested for $TAG."
+            exit 0
+          fi
+          if [ "${GITHUB_REF_TYPE}" != "tag" ] && gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — nothing to do (dispatch this workflow with force to rebuild)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Keep an existing release tag on main
         if: steps.v.outputs.skip == 'true'
@@ -53,20 +80,52 @@ jobs:
           fi
 
       - name: Package theme
+        id: pkg
         if: steps.v.outputs.skip != 'true'
-        run: bash tools/package.sh
+        run: |
+          set -euo pipefail
+          # take the file name from the script itself so the workflow and package.sh cannot drift
+          ZIP=$(bash tools/package.sh | tail -n 1)
+          test -f "$ZIP" || { echo "::error::tools/package.sh did not create $ZIP"; exit 1; }
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "Built $ZIP ($(du -h "$ZIP" | cut -f1))"
+
+      - name: Verify artifact
+        if: steps.v.outputs.skip != 'true'
+        env:
+          ZIP: ${{ steps.pkg.outputs.zip }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          # a zip that installs must carry the manifest at its root plus the whole dist tree
+          LIST=$(unzip -Z1 "$ZIP")
+          for f in komari-theme.json preview.png dist/index.html dist/assets/app.js dist/assets/app.css dist/assets/manage.js; do
+            grep -qx "$f" <<<"$LIST" || { echo "::error::$f is missing from $ZIP"; exit 1; }
+          done
+          # the manifest inside the archive has to be the version we are about to tag
+          unzip -p "$ZIP" komari-theme.json > "$RUNNER_TEMP/manifest.json"
+          INNER=$(python3 -c "import json;print(json.load(open('$RUNNER_TEMP/manifest.json'))['version'])")
+          if [ "$INNER" != "$VERSION" ]; then
+            echo "::error::manifest inside the zip says $INNER but the workflow version is $VERSION"
+            exit 1
+          fi
+          echo "Artifact ok: $(wc -l <<<"$LIST") entries, version $VERSION"
 
       - name: Release notes from CHANGELOG
         if: steps.v.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          ZIP: ${{ steps.pkg.outputs.zip }}
         run: |
           python3 - <<'PY' > notes.md
-          import re
-          v = "${{ steps.v.outputs.version }}"
+          import os, re
+          v = os.environ['VERSION']
+          z = os.environ['ZIP']
           text = open('CHANGELOG.md', encoding='utf-8').read()
           m = re.search(r'^## ' + re.escape(v) + r'\s*\n(.*?)(?=^## |\Z)', text, re.S | re.M)
           print(m.group(1).strip() if m else 'See CHANGELOG.md')
           print()
-          print('**安装**：Komari 后台 → 设置 → 主题 → 上传 `Komari-Theme-Horizon-v%s.zip`' % v)
+          print('**安装**：Komari 后台 → 设置 → 主题 → 上传 `%s`' % z)
           PY
           cat notes.md
 
@@ -74,12 +133,38 @@ jobs:
         if: steps.v.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+          ZIP: ${{ steps.pkg.outputs.zip }}
         run: |
-          TAG="${{ steps.v.outputs.tag }}"
-          ZIP="Komari-Theme-Horizon-${TAG}.zip"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ZIP" --clobber
-            gh release edit "$TAG" --notes-file notes.md
-          else
-            gh release create "$TAG" "$ZIP" --target "$GITHUB_SHA" --title "Horizon $TAG" --notes-file notes.md
+          set -euo pipefail
+          publish() {
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "$ZIP" --clobber
+              gh release edit "$TAG" --notes-file notes.md
+            else
+              gh release create "$TAG" "$ZIP" --target "$GITHUB_SHA" --title "Komari-Theme-Horizon-For-PTer $TAG" --notes-file notes.md
+            fi
+          }
+          if ! publish; then
+            cat <<'MSG'
+          ::error::Could not publish the release. On a forked repository this is almost always
+          ::error::the GITHUB_TOKEN being read-only. Fix it in
+          ::error::Settings -> Actions -> General -> Workflow permissions ->
+          ::error::"Read and write permissions", then re-run this workflow.
+          MSG
+            exit 1
           fi
+
+      - name: Summary
+        if: steps.v.outputs.skip != 'true' && success()
+        env:
+          TAG: ${{ steps.v.outputs.tag }}
+          ZIP: ${{ steps.pkg.outputs.zip }}
+        run: |
+          {
+            echo "## Release $TAG"
+            echo ""
+            echo "- Asset: \`$ZIP\`"
+            echo "- Repo: $GITHUB_REPOSITORY"
+            echo "- Download: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG/$ZIP"
+          } >> "$GITHUB_STEP_SUMMARY"

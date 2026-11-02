@@ -1,6 +1,13 @@
 name: Demo site
 
 # Rebuilds the GitHub Pages demo (gh-pages branch) whenever the theme or the simulated backend changes.
+#
+# Fork notes:
+#   * Enable Pages once in Settings -> Pages -> Source: "Deploy from a branch", branch gh-pages.
+#   * The custom domain comes from demo/CNAME and was removed in this fork, because the upstream
+#     file pointed at the original author's domain. Add your own host name there to use one.
+#   * Pushing gh-pages needs a writable GITHUB_TOKEN (Settings -> Actions -> General ->
+#     Workflow permissions -> "Read and write permissions").
 on:
   push:
     branches: [main]
@@ -21,6 +28,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build
+        env:
+          # the demo's admin entry links to this repository instead of a real /admin panel
+          REPO_URL: https://github.com/${{ github.repository }}
         run: python3 tools/build-demo.py _site
 
       - name: Publish to gh-pages
